@@ -930,6 +930,11 @@ async def get_available_email_services():
             "available": False,
             "count": 0,
             "services": []
+        },
+        "temp_mail": {
+            "available": False,
+            "count": 0,
+            "services": []
         }
     }
 
@@ -983,6 +988,25 @@ async def get_available_email_services():
                     "type": "custom_domain",
                     "from_settings": True
                 })
+
+        # 获取 TempMail 服务（自部署 Cloudflare Worker 临时邮箱）
+        temp_mail_services = db.query(EmailServiceModel).filter(
+            EmailServiceModel.service_type == "temp_mail",
+            EmailServiceModel.enabled == True
+        ).order_by(EmailServiceModel.priority.asc()).all()
+
+        for service in temp_mail_services:
+            config = service.config or {}
+            result["temp_mail"]["services"].append({
+                "id": service.id,
+                "name": service.name,
+                "type": "temp_mail",
+                "domain": config.get("domain"),
+                "priority": service.priority
+            })
+
+        result["temp_mail"]["count"] = len(temp_mail_services)
+        result["temp_mail"]["available"] = len(temp_mail_services) > 0
 
     return result
 

@@ -58,7 +58,19 @@ const elements = {
     editOutlookModal: document.getElementById('edit-outlook-modal'),
     editOutlookForm: document.getElementById('edit-outlook-form'),
     closeEditOutlookModal: document.getElementById('close-edit-outlook-modal'),
-    cancelEditOutlook: document.getElementById('cancel-edit-outlook')
+    cancelEditOutlook: document.getElementById('cancel-edit-outlook'),
+
+    // Temp-Mail 服务
+    tempMailTable: document.getElementById('tempmail-services-table'),
+    addTempMailBtn: document.getElementById('add-tempmail-btn'),
+    addTempMailModal: document.getElementById('add-tempmail-modal'),
+    addTempMailForm: document.getElementById('add-tempmail-form'),
+    closeAddTempMailModal: document.getElementById('close-add-tempmail-modal'),
+    cancelAddTempMail: document.getElementById('cancel-add-tempmail'),
+    editTempMailModal: document.getElementById('edit-tempmail-modal'),
+    editTempMailForm: document.getElementById('edit-tempmail-form'),
+    closeEditTempMailModal: document.getElementById('close-edit-tempmail-modal'),
+    cancelEditTempMail: document.getElementById('cancel-edit-tempmail')
 };
 
 // 初始化
@@ -66,6 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadStats();
     loadOutlookServices();
     loadCustomServices();
+    loadTempMailServices();
     loadTempmailConfig();
     initEventListeners();
 });
@@ -158,6 +171,26 @@ function initEventListeners() {
     // 临时邮箱配置
     elements.tempmailForm.addEventListener('submit', handleSaveTempmail);
     elements.testTempmailBtn.addEventListener('click', handleTestTempmail);
+
+    // Temp-Mail 服务
+    elements.addTempMailBtn.addEventListener('click', () => {
+        elements.addTempMailModal.classList.add('active');
+    });
+    elements.closeAddTempMailModal.addEventListener('click', () => {
+        elements.addTempMailModal.classList.remove('active');
+    });
+    elements.cancelAddTempMail.addEventListener('click', () => {
+        elements.addTempMailModal.classList.remove('active');
+    });
+    elements.addTempMailForm.addEventListener('submit', handleAddTempMail);
+
+    elements.closeEditTempMailModal.addEventListener('click', () => {
+        elements.editTempMailModal.classList.remove('active');
+    });
+    elements.cancelEditTempMail.addEventListener('click', () => {
+        elements.editTempMailModal.classList.remove('active');
+    });
+    elements.editTempMailForm.addEventListener('submit', handleEditTempMail);
 }
 
 // 加载统计信息
@@ -672,6 +705,137 @@ async function handleEditOutlook(e) {
         toast.success('账户更新成功');
         elements.editOutlookModal.classList.remove('active');
         loadOutlookServices();
+        loadStats();
+    } catch (error) {
+        toast.error('更新失败: ' + error.message);
+    }
+}
+
+
+// ============== Temp-Mail 服务功能 ==============
+
+// 加载 Temp-Mail 服务列表
+async function loadTempMailServices() {
+    try {
+        const data = await api.get('/email-services?service_type=temp_mail');
+        const services = data.services || [];
+
+        if (services.length === 0) {
+            elements.tempMailTable.innerHTML = `
+                <tr><td colspan="6">
+                    <div class="empty-state" style="padding: var(--spacing-md);">
+                        <div class="empty-state-icon">📮</div>
+                        <div class="empty-state-title">暂无 Temp-Mail 服务</div>
+                        <div class="empty-state-desc">点击「添加服务」配置自部署 Cloudflare Worker 临时邮箱</div>
+                    </div>
+                </td></tr>
+            `;
+            return;
+        }
+
+        elements.tempMailTable.innerHTML = services.map(service => {
+            const config = service.config || {};
+            return `
+                <tr>
+                    <td><strong>${escapeHtml(service.name)}</strong></td>
+                    <td style="font-size: 0.8rem; color: var(--text-muted);">${escapeHtml(config.base_url || '-')}</td>
+                    <td>${escapeHtml(config.domain || '-')}</td>
+                    <td>
+                        <span class="status-badge ${service.enabled ? 'completed' : 'disabled'}">
+                            ${service.enabled ? '已启用' : '已禁用'}
+                        </span>
+                    </td>
+                    <td>${service.priority || 0}</td>
+                    <td>
+                        <div class="action-buttons">
+                            <button class="btn btn-ghost btn-sm" onclick="editTempMailService(${service.id})" title="编辑">✏️</button>
+                            <button class="btn btn-ghost btn-sm" onclick="testService(${service.id})" title="测试">🔌</button>
+                            <button class="btn btn-ghost btn-sm" onclick="toggleService(${service.id}, ${!service.enabled})" title="${service.enabled ? '禁用' : '启用'}">
+                                ${service.enabled ? '⏸️' : '▶️'}
+                            </button>
+                            <button class="btn btn-ghost btn-sm" onclick="deleteService(${service.id})" title="删除">🗑️</button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    } catch (error) {
+        console.error('加载 Temp-Mail 服务失败:', error);
+    }
+}
+
+// 添加 Temp-Mail 服务
+async function handleAddTempMail(e) {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const data = {
+        service_type: 'temp_mail',
+        name: formData.get('name'),
+        config: {
+            base_url: formData.get('base_url'),
+            admin_password: formData.get('admin_password'),
+            domain: formData.get('domain'),
+            enable_prefix: true
+        },
+        enabled: formData.get('enabled') === 'on',
+        priority: parseInt(formData.get('priority')) || 0
+    };
+    try {
+        await api.post('/email-services', data);
+        toast.success('服务添加成功');
+        elements.addTempMailModal.classList.remove('active');
+        e.target.reset();
+        loadTempMailServices();
+        loadStats();
+    } catch (error) {
+        toast.error('添加失败: ' + error.message);
+    }
+}
+
+// 编辑 Temp-Mail 服务
+async function editTempMailService(id) {
+    try {
+        const service = await api.get(`/email-services/${id}/full`);
+        document.getElementById('edit-tm-id').value = service.id;
+        document.getElementById('edit-tm-name').value = service.name || '';
+        document.getElementById('edit-tm-base-url').value = service.config?.base_url || '';
+        document.getElementById('edit-tm-admin-password').value = '';
+        document.getElementById('edit-tm-admin-password').placeholder = service.config?.admin_password ? '已设置，留空保持不变' : '请输入 Admin 密码';
+        document.getElementById('edit-tm-domain').value = service.config?.domain || '';
+        document.getElementById('edit-tm-priority').value = service.priority || 0;
+        document.getElementById('edit-tm-enabled').checked = service.enabled;
+        elements.editTempMailModal.classList.add('active');
+    } catch (error) {
+        toast.error('获取服务信息失败: ' + error.message);
+    }
+}
+
+// 保存编辑 Temp-Mail 服务
+async function handleEditTempMail(e) {
+    e.preventDefault();
+    const id = document.getElementById('edit-tm-id').value;
+    const formData = new FormData(e.target);
+    const config = {
+        base_url: formData.get('base_url'),
+        domain: formData.get('domain'),
+        enable_prefix: true
+    };
+    // 只有填写了密码才更新
+    const pwd = formData.get('admin_password');
+    if (pwd && pwd.trim()) {
+        config.admin_password = pwd.trim();
+    }
+    const updateData = {
+        name: formData.get('name'),
+        priority: parseInt(formData.get('priority')) || 0,
+        enabled: formData.get('enabled') === 'on',
+        config
+    };
+    try {
+        await api.patch(`/email-services/${id}`, updateData);
+        toast.success('服务更新成功');
+        elements.editTempMailModal.classList.remove('active');
+        loadTempMailServices();
         loadStats();
     } catch (error) {
         toast.error('更新失败: ' + error.message);

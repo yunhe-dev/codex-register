@@ -143,6 +143,7 @@ async def get_email_services_stats():
         stats = {
             'outlook_count': 0,
             'custom_count': 0,
+            'temp_mail_count': 0,
             'tempmail_available': True,  # 临时邮箱始终可用
             'enabled_count': enabled_count
         }
@@ -152,6 +153,8 @@ async def get_email_services_stats():
                 stats['outlook_count'] = count
             elif service_type == 'custom_domain':
                 stats['custom_count'] = count
+            elif service_type == 'temp_mail':
+                stats['temp_mail_count'] = count
 
         return stats
 
@@ -189,6 +192,17 @@ async def get_service_types():
                     {"name": "base_url", "label": "API 地址", "required": True},
                     {"name": "api_key", "label": "API Key", "required": True},
                     {"name": "default_domain", "label": "默认域名", "required": False},
+                ]
+            },
+            {
+                "value": "temp_mail",
+                "label": "Temp-Mail（自部署）",
+                "description": "自部署 Cloudflare Worker 临时邮箱，admin 模式管理",
+                "config_fields": [
+                    {"name": "base_url", "label": "Worker 地址", "required": True, "placeholder": "https://mail.example.com"},
+                    {"name": "admin_password", "label": "Admin 密码", "required": True, "secret": True},
+                    {"name": "domain", "label": "邮箱域名", "required": True, "placeholder": "example.com"},
+                    {"name": "enable_prefix", "label": "启用前缀", "required": False, "default": True},
                 ]
             }
         ]

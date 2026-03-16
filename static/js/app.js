@@ -21,7 +21,8 @@ let toastShown = false;  // 标记是否已显示过 toast
 let availableServices = {
     tempmail: { available: true, services: [] },
     outlook: { available: false, services: [] },
-    custom_domain: { available: false, services: [] }
+    custom_domain: { available: false, services: [] },
+    temp_mail: { available: false, services: [] }
 };
 
 // WebSocket 相关变量
@@ -245,6 +246,23 @@ function updateEmailServiceOptions() {
         option.textContent = '请先在邮箱服务页面添加服务';
         option.disabled = true;
         optgroup.appendChild(option);
+
+        select.appendChild(optgroup);
+    }
+
+    // Temp-Mail（自部署）
+    if (availableServices.temp_mail && availableServices.temp_mail.available) {
+        const optgroup = document.createElement('optgroup');
+        optgroup.label = `📮 Temp-Mail 自部署 (${availableServices.temp_mail.count} 个服务)`;
+
+        availableServices.temp_mail.services.forEach(service => {
+            const option = document.createElement('option');
+            option.value = `temp_mail:${service.id}`;
+            option.textContent = service.name + (service.domain ? ` (@${service.domain})` : '');
+            option.dataset.type = 'temp_mail';
+            option.dataset.serviceId = service.id;
+            optgroup.appendChild(option);
+        });
 
         select.appendChild(optgroup);
     }

@@ -34,6 +34,7 @@ class EmailServiceType(str, Enum):
     TEMPMAIL = "tempmail"
     OUTLOOK = "outlook"
     CUSTOM_DOMAIN = "custom_domain"
+    TEMP_MAIL = "temp_mail"
 
 
 # ============================================================================

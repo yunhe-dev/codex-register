@@ -127,6 +127,40 @@
                 </div>
             </div>
 
+            <!-- Temp-Mail 服务管理 -->
+            <div class="card">
+                <div class="card-header">
+                    <h3>📮 Temp-Mail 服务（自部署）</h3>
+                    <button class="btn btn-primary btn-sm" id="add-tempmail-btn">➕ 添加服务</button>
+                </div>
+                <div class="card-body" style="padding: 0;">
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>名称</th>
+                                    <th style="width: 200px;">Worker 地址</th>
+                                    <th style="width: 120px;">邮箱域名</th>
+                                    <th style="width: 100px;">状态</th>
+                                    <th style="width: 80px;">优先级</th>
+                                    <th style="width: 160px;">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tempmail-services-table">
+                                <tr>
+                                    <td colspan="6">
+                                        <div class="empty-state">
+                                            <div class="skeleton skeleton-text"></div>
+                                            <div class="skeleton skeleton-text" style="width: 80%;"></div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
             <!-- Outlook 账户列表 -->
             <div class="card">
                 <div class="card-header">
@@ -326,6 +360,99 @@
                     <div class="form-actions">
                         <button type="submit" class="btn btn-primary">保存</button>
                         <button type="button" class="btn btn-secondary" id="cancel-edit-outlook">取消</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 添加 Temp-Mail 服务模态框 -->
+    <div class="modal" id="add-tempmail-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>➕ 添加 Temp-Mail 服务</h3>
+                <button class="modal-close" id="close-add-tempmail-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="add-tempmail-form">
+                    <div class="form-group">
+                        <label for="tm-name">服务名称</label>
+                        <input type="text" id="tm-name" name="name" required placeholder="例如：我的临时邮箱">
+                    </div>
+                    <div class="form-group">
+                        <label for="tm-base-url">Worker 地址</label>
+                        <input type="text" id="tm-base-url" name="base_url" required placeholder="https://mail.example.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="tm-admin-password">Admin 密码</label>
+                        <input type="password" id="tm-admin-password" name="admin_password" required placeholder="x-admin-auth 密码">
+                    </div>
+                    <div class="form-group">
+                        <label for="tm-domain">邮箱域名</label>
+                        <input type="text" id="tm-domain" name="domain" required placeholder="example.com">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="tm-priority">优先级</label>
+                            <input type="number" id="tm-priority" name="priority" value="0" min="0">
+                        </div>
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="tm-enabled" name="enabled" checked>
+                                启用服务
+                            </label>
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">添加</button>
+                        <button type="button" class="btn btn-secondary" id="cancel-add-tempmail">取消</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 编辑 Temp-Mail 服务模态框 -->
+    <div class="modal" id="edit-tempmail-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>✏️ 编辑 Temp-Mail 服务</h3>
+                <button class="modal-close" id="close-edit-tempmail-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="edit-tempmail-form">
+                    <input type="hidden" id="edit-tm-id">
+                    <div class="form-group">
+                        <label for="edit-tm-name">服务名称</label>
+                        <input type="text" id="edit-tm-name" name="name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-tm-base-url">Worker 地址</label>
+                        <input type="text" id="edit-tm-base-url" name="base_url" required placeholder="https://mail.example.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-tm-admin-password">Admin 密码（留空保持不变）</label>
+                        <input type="password" id="edit-tm-admin-password" name="admin_password" placeholder="留空则不修改">
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-tm-domain">邮箱域名</label>
+                        <input type="text" id="edit-tm-domain" name="domain" required placeholder="example.com">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="edit-tm-priority">优先级</label>
+                            <input type="number" id="edit-tm-priority" name="priority" value="0" min="0">
+                        </div>
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="edit-tm-enabled" name="enabled">
+                                启用服务
+                            </label>
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">保存</button>
+                        <button type="button" class="btn btn-secondary" id="cancel-edit-tempmail">取消</button>
                     </div>
                 </form>
             </div>
