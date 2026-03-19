@@ -7,7 +7,7 @@ import logging
 from typing import List, Optional
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Query, BackgroundTasks, Body
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -579,28 +579,6 @@ class BatchValidateRequest(BaseModel):
     search_filter: Optional[str] = None
 
 
-@router.post("/{account_id}/refresh")
-async def refresh_account_token(account_id: int, request: TokenRefreshRequest = None):
-    """刷新单个账号的 Token"""
-    from ...core.openai.token_refresh import refresh_account_token as do_refresh
-
-    # 使用传入的代理或全局代理配置
-    proxy = request.proxy if request and request.proxy else get_settings().proxy_url
-    result = do_refresh(account_id, proxy)
-
-    if result.success:
-        return {
-            "success": True,
-            "message": "Token 刷新成功",
-            "expires_at": result.expires_at.isoformat() if result.expires_at else None
-        }
-    else:
-        return {
-            "success": False,
-            "error": result.error_message
-        }
-
-
 @router.post("/batch-refresh")
 async def batch_refresh_tokens(request: BatchRefreshRequest, background_tasks: BackgroundTasks):
     """批量刷新账号 Token"""
@@ -636,20 +614,26 @@ async def batch_refresh_tokens(request: BatchRefreshRequest, background_tasks: B
     return results
 
 
-@router.post("/{account_id}/validate")
-async def validate_account_token(account_id: int, request: TokenValidateRequest = None):
-    """验证单个账号的 Token 有效性"""
-    from ...core.openai.token_refresh import validate_account_token as do_validate
+@router.post("/{account_id}/refresh")
+async def refresh_account_token(account_id: int, request: Optional[TokenRefreshRequest] = Body(default=None)):
+    """刷新单个账号的 Token"""
+    from ...core.openai.token_refresh import refresh_account_token as do_refresh
 
     # 使用传入的代理或全局代理配置
     proxy = request.proxy if request and request.proxy else get_settings().proxy_url
-    is_valid, error = do_validate(account_id, proxy)
+    result = do_refresh(account_id, proxy)
 
-    return {
-        "id": account_id,
-        "valid": is_valid,
-        "error": error
-    }
+    if result.success:
+        return {
+            "success": True,
+            "message": "Token 刷新成功",
+            "expires_at": result.expires_at.isoformat() if result.expires_at else None
+        }
+    else:
+        return {
+            "success": False,
+            "error": result.error_message
+        }
 
 
 @router.post("/batch-validate")
@@ -695,6 +679,22 @@ async def batch_validate_tokens(request: BatchValidateRequest):
     return results
 
 
+@router.post("/{account_id}/validate")
+async def validate_account_token(account_id: int, request: Optional[TokenValidateRequest] = Body(default=None)):
+    """验证单个账号的 Token 有效性"""
+    from ...core.openai.token_refresh import validate_account_token as do_validate
+
+    # 使用传入的代理或全局代理配置
+    proxy = request.proxy if request and request.proxy else get_settings().proxy_url
+    is_valid, error = do_validate(account_id, proxy)
+
+    return {
+        "id": account_id,
+        "valid": is_valid,
+        "error": error
+    }
+
+
 # ============== CPA 上传相关 ==============
 
 class CPAUploadRequest(BaseModel):
@@ -714,8 +714,36 @@ class BatchCPAUploadRequest(BaseModel):
     cpa_service_id: Optional[int] = None  # 指定 CPA 服务 ID，不传则使用全局配置
 
 
+@router.post("/batch-upload-cpa")
+async def batch_upload_accounts_to_cpa(request: BatchCPAUploadRequest):
+    """批量上传账号到 CPA"""
+    from ...core.upload.cpa_upload import batch_upload_to_cpa
+
+    proxy = request.proxy if request.proxy else get_settings().proxy_url
+
+    # 解析指定的 CPA 服务
+    cpa_api_url = None
+    cpa_api_token = None
+    if request.cpa_service_id:
+        with get_db() as db:
+            svc = crud.get_cpa_service_by_id(db, request.cpa_service_id)
+            if not svc:
+                raise HTTPException(status_code=404, detail="指定的 CPA 服务不存在")
+            cpa_api_url = svc.api_url
+            cpa_api_token = svc.api_token
+
+    with get_db() as db:
+        ids = resolve_account_ids(
+            db, request.ids, request.select_all,
+            request.status_filter, request.email_service_filter, request.search_filter
+        )
+
+    results = batch_upload_to_cpa(ids, proxy, api_url=cpa_api_url, api_token=cpa_api_token)
+    return results
+
+
 @router.post("/{account_id}/upload-cpa")
-async def upload_account_to_cpa(account_id: int, request: CPAUploadRequest = None):
+async def upload_account_to_cpa(account_id: int, request: Optional[CPAUploadRequest] = Body(default=None)):
     """上传单个账号到 CPA"""
     from ...core.upload.cpa_upload import upload_to_cpa, generate_token_json
 
@@ -759,84 +787,11 @@ async def upload_account_to_cpa(account_id: int, request: CPAUploadRequest = Non
             return {"success": False, "error": message}
 
 
-@router.post("/batch-upload-cpa")
-async def batch_upload_accounts_to_cpa(request: BatchCPAUploadRequest):
-    """批量上传账号到 CPA"""
-    from ...core.upload.cpa_upload import batch_upload_to_cpa
-
-    proxy = request.proxy if request.proxy else get_settings().proxy_url
-
-    # 解析指定的 CPA 服务
-    cpa_api_url = None
-    cpa_api_token = None
-    if request.cpa_service_id:
-        with get_db() as db:
-            svc = crud.get_cpa_service_by_id(db, request.cpa_service_id)
-            if not svc:
-                raise HTTPException(status_code=404, detail="指定的 CPA 服务不存在")
-            cpa_api_url = svc.api_url
-            cpa_api_token = svc.api_token
-
-    with get_db() as db:
-        ids = resolve_account_ids(
-            db, request.ids, request.select_all,
-            request.status_filter, request.email_service_filter, request.search_filter
-        )
-
-    results = batch_upload_to_cpa(ids, proxy, api_url=cpa_api_url, api_token=cpa_api_token)
-    return results
-
-
 class Sub2ApiUploadRequest(BaseModel):
     """单账号 Sub2API 上传请求"""
     service_id: Optional[int] = None
     concurrency: int = 3
     priority: int = 50
-
-
-@router.post("/{account_id}/upload-sub2api")
-async def upload_account_to_sub2api(account_id: int, request: Sub2ApiUploadRequest = None):
-    """上传单个账号到 Sub2API"""
-    from ...core.upload.sub2api_upload import upload_to_sub2api
-
-    service_id = request.service_id if request else None
-    concurrency = request.concurrency if request else 3
-    priority = request.priority if request else 50
-
-    api_url = None
-    api_key = None
-    if service_id:
-        with get_db() as db:
-            svc = crud.get_sub2api_service_by_id(db, service_id)
-            if not svc:
-                raise HTTPException(status_code=404, detail="指定的 Sub2API 服务不存在")
-            api_url = svc.api_url
-            api_key = svc.api_key
-    else:
-        with get_db() as db:
-            svcs = crud.get_sub2api_services(db, enabled=True)
-            if svcs:
-                api_url = svcs[0].api_url
-                api_key = svcs[0].api_key
-
-    if not api_url or not api_key:
-        raise HTTPException(status_code=400, detail="未找到可用的 Sub2API 服务，请先在设置中配置")
-
-    with get_db() as db:
-        account = crud.get_account_by_id(db, account_id)
-        if not account:
-            raise HTTPException(status_code=404, detail="账号不存在")
-        if not account.access_token:
-            return {"success": False, "error": "账号缺少 Token，无法上传"}
-
-        success, message = upload_to_sub2api(
-            [account], api_url, api_key,
-            concurrency=concurrency, priority=priority
-        )
-        if success:
-            return {"success": True, "message": message}
-        else:
-            return {"success": False, "error": message}
 
 
 class BatchSub2ApiUploadRequest(BaseModel):
@@ -888,3 +843,118 @@ async def batch_upload_accounts_to_sub2api(request: BatchSub2ApiUploadRequest):
         priority=request.priority,
     )
     return results
+
+
+@router.post("/{account_id}/upload-sub2api")
+async def upload_account_to_sub2api(account_id: int, request: Optional[Sub2ApiUploadRequest] = Body(default=None)):
+    """上传单个账号到 Sub2API"""
+    from ...core.upload.sub2api_upload import upload_to_sub2api
+
+    service_id = request.service_id if request else None
+    concurrency = request.concurrency if request else 3
+    priority = request.priority if request else 50
+
+    api_url = None
+    api_key = None
+    if service_id:
+        with get_db() as db:
+            svc = crud.get_sub2api_service_by_id(db, service_id)
+            if not svc:
+                raise HTTPException(status_code=404, detail="指定的 Sub2API 服务不存在")
+            api_url = svc.api_url
+            api_key = svc.api_key
+    else:
+        with get_db() as db:
+            svcs = crud.get_sub2api_services(db, enabled=True)
+            if svcs:
+                api_url = svcs[0].api_url
+                api_key = svcs[0].api_key
+
+    if not api_url or not api_key:
+        raise HTTPException(status_code=400, detail="未找到可用的 Sub2API 服务，请先在设置中配置")
+
+    with get_db() as db:
+        account = crud.get_account_by_id(db, account_id)
+        if not account:
+            raise HTTPException(status_code=404, detail="账号不存在")
+        if not account.access_token:
+            return {"success": False, "error": "账号缺少 Token，无法上传"}
+
+        success, message = upload_to_sub2api(
+            [account], api_url, api_key,
+            concurrency=concurrency, priority=priority
+        )
+        if success:
+            return {"success": True, "message": message}
+        else:
+            return {"success": False, "error": message}
+
+
+# ============== Team Manager 上传 ==============
+
+class UploadTMRequest(BaseModel):
+    service_id: Optional[int] = None
+
+
+class BatchUploadTMRequest(BaseModel):
+    ids: List[int] = []
+    select_all: bool = False
+    status_filter: Optional[str] = None
+    email_service_filter: Optional[str] = None
+    search_filter: Optional[str] = None
+    service_id: Optional[int] = None
+
+
+@router.post("/batch-upload-tm")
+async def batch_upload_accounts_to_tm(request: BatchUploadTMRequest):
+    """批量上传账号到 Team Manager"""
+    from ...core.upload.team_manager_upload import batch_upload_to_team_manager
+
+    with get_db() as db:
+        if request.service_id:
+            svc = crud.get_tm_service_by_id(db, request.service_id)
+        else:
+            svcs = crud.get_tm_services(db, enabled=True)
+            svc = svcs[0] if svcs else None
+
+        if not svc:
+            raise HTTPException(status_code=400, detail="未找到可用的 Team Manager 服务，请先在设置中配置")
+
+        api_url = svc.api_url
+        api_key = svc.api_key
+
+        ids = resolve_account_ids(
+            db, request.ids, request.select_all,
+            request.status_filter, request.email_service_filter, request.search_filter
+        )
+
+    results = batch_upload_to_team_manager(ids, api_url, api_key)
+    return results
+
+
+@router.post("/{account_id}/upload-tm")
+async def upload_account_to_tm(account_id: int, request: Optional[UploadTMRequest] = Body(default=None)):
+    """上传单账号到 Team Manager"""
+    from ...core.upload.team_manager_upload import upload_to_team_manager
+
+    service_id = request.service_id if request else None
+
+    with get_db() as db:
+        if service_id:
+            svc = crud.get_tm_service_by_id(db, service_id)
+        else:
+            svcs = crud.get_tm_services(db, enabled=True)
+            svc = svcs[0] if svcs else None
+
+        if not svc:
+            raise HTTPException(status_code=400, detail="未找到可用的 Team Manager 服务，请先在设置中配置")
+
+        api_url = svc.api_url
+        api_key = svc.api_key
+
+        account = crud.get_account_by_id(db, account_id)
+        if not account:
+            raise HTTPException(status_code=404, detail="账号不存在")
+        success, message = upload_to_team_manager(account, api_url, api_key)
+
+    return {"success": success, "message": message}
