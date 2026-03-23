@@ -8,7 +8,11 @@ from pydantic import BaseModel
 
 from ....database import crud
 from ....database.session import get_db
-from ....core.upload.sub2api_upload import test_sub2api_connection, batch_upload_to_sub2api
+from ....core.upload.sub2api_upload import (
+    test_sub2api_connection,
+    batch_upload_to_sub2api,
+    list_sub2api_groups,
+)
 
 router = APIRouter()
 
@@ -19,6 +23,7 @@ class Sub2ApiServiceCreate(BaseModel):
     name: str
     api_url: str
     api_key: str
+    group_ids: List[int] = []
     enabled: bool = True
     priority: int = 0
 
@@ -27,6 +32,7 @@ class Sub2ApiServiceUpdate(BaseModel):
     name: Optional[str] = None
     api_url: Optional[str] = None
     api_key: Optional[str] = None
+    group_ids: Optional[List[int]] = None
     enabled: Optional[bool] = None
     priority: Optional[int] = None
 
@@ -36,6 +42,7 @@ class Sub2ApiServiceResponse(BaseModel):
     name: str
     api_url: str
     has_key: bool
+    group_ids: List[int] = []
     enabled: bool
     priority: int
     created_at: Optional[str] = None
@@ -57,12 +64,19 @@ class Sub2ApiUploadRequest(BaseModel):
     priority: int = 50
 
 
+class Sub2ApiFetchGroupsRequest(BaseModel):
+    api_url: Optional[str] = None
+    api_key: Optional[str] = None
+    platform: str = "openai"
+
+
 def _to_response(svc) -> Sub2ApiServiceResponse:
     return Sub2ApiServiceResponse(
         id=svc.id,
         name=svc.name,
         api_url=svc.api_url,
         has_key=bool(svc.api_key),
+        group_ids=svc.group_ids or [],
         enabled=svc.enabled,
         priority=svc.priority,
         created_at=svc.created_at.isoformat() if svc.created_at else None,
@@ -89,6 +103,7 @@ async def create_sub2api_service(request: Sub2ApiServiceCreate):
             name=request.name,
             api_url=request.api_url,
             api_key=request.api_key,
+            group_ids=request.group_ids,
             enabled=request.enabled,
             priority=request.priority,
         )
@@ -117,6 +132,7 @@ async def get_sub2api_service_full(service_id: int):
             "name": svc.name,
             "api_url": svc.api_url,
             "api_key": svc.api_key,
+            "group_ids": svc.group_ids or [],
             "enabled": svc.enabled,
             "priority": svc.priority,
         }
@@ -138,6 +154,8 @@ async def update_sub2api_service(service_id: int, request: Sub2ApiServiceUpdate)
         # api_key 留空则保持原值
         if request.api_key:
             update_data["api_key"] = request.api_key
+        if request.group_ids is not None:
+            update_data["group_ids"] = request.group_ids
         if request.enabled is not None:
             update_data["enabled"] = request.enabled
         if request.priority is not None:
@@ -178,6 +196,26 @@ async def test_sub2api_connection_direct(request: Sub2ApiTestRequest):
     return {"success": success, "message": message}
 
 
+@router.get("/{service_id}/groups")
+async def list_sub2api_service_groups(service_id: int, platform: str = "openai"):
+    """获取指定 Sub2API 服务可用分组"""
+    with get_db() as db:
+        svc = crud.get_sub2api_service_by_id(db, service_id)
+        if not svc:
+            raise HTTPException(status_code=404, detail="Sub2API 服务不存在")
+        groups = list_sub2api_groups(svc.api_url, svc.api_key, platform=platform)
+        return {"success": True, "groups": groups}
+
+
+@router.post("/groups/fetch")
+async def fetch_sub2api_groups(request: Sub2ApiFetchGroupsRequest):
+    """直接通过 URL + Key 拉取 Sub2API 分组（用于保存前预览）"""
+    if not request.api_url or not request.api_key:
+        raise HTTPException(status_code=400, detail="api_url 和 api_key 不能为空")
+    groups = list_sub2api_groups(request.api_url, request.api_key, platform=request.platform)
+    return {"success": True, "groups": groups}
+
+
 @router.post("/upload")
 async def upload_accounts_to_sub2api(request: Sub2ApiUploadRequest):
     """批量上传账号到 Sub2API 平台"""
@@ -203,5 +241,6 @@ async def upload_accounts_to_sub2api(request: Sub2ApiUploadRequest):
         api_key,
         concurrency=request.concurrency,
         priority=request.priority,
+        group_ids=svc.group_ids or [],
     )
     return results

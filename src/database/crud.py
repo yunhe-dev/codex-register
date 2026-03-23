@@ -595,6 +595,7 @@ def create_sub2api_service(
     name: str,
     api_url: str,
     api_key: str,
+    group_ids: Optional[list] = None,
     enabled: bool = True,
     priority: int = 0
 ) -> Sub2ApiService:
@@ -603,6 +604,7 @@ def create_sub2api_service(
         name=name,
         api_url=api_url,
         api_key=api_key,
+        group_ids=group_ids or [],
         enabled=enabled,
         priority=priority,
     )

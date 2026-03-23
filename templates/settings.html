@@ -242,13 +242,14 @@
                                     <tr>
                                         <th style="width:150px;">名称</th>
                                         <th>API URL</th>
+                                        <th style="width:120px;">预设分组</th>
                                         <th style="width:80px;">状态</th>
                                         <th style="width:60px;text-align:center;">优先级</th>
                                         <th style="width:220px;">操作</th>
                                     </tr>
                                 </thead>
                                 <tbody id="sub2api-services-table">
-                                    <tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">加载中...</td></tr>
+                                    <tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:20px;">加载中...</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -349,6 +350,17 @@
                                 <label for="sub2api-service-key">API Key</label>
                                 <input type="password" id="sub2api-service-key" placeholder="编辑时留空则保持原值" autocomplete="new-password">
                             </div>
+                            <div class="form-group">
+                                <label>预设分组（可多选）</label>
+                                <div id="sub2api-service-groups-list" style="max-height:160px;overflow:auto;border:1px solid var(--border-color);border-radius:8px;padding:8px;background:var(--bg-secondary);">
+                                    <div style="color:var(--text-muted);font-size:0.9rem;">请点击「获取分组」加载</div>
+                                </div>
+                                <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;">
+                                    <div id="sub2api-service-selected-groups" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+                                    <button type="button" class="btn btn-secondary btn-sm" id="clear-sub2api-selected-groups-btn">清空已选</button>
+                                </div>
+                                <p class="hint">先测试连接后点击「获取分组」，上传时会自动绑定到选中分组</p>
+                            </div>
                             <div class="form-row">
                                 <div class="form-group">
                                     <label for="sub2api-service-priority">优先级</label>
@@ -364,6 +376,7 @@
                             </div>
                             <div class="form-actions">
                                 <button type="submit" class="btn btn-primary">💾 保存</button>
+                                <button type="button" class="btn btn-secondary" id="fetch-sub2api-groups-btn">📂 获取分组</button>
                                 <button type="button" class="btn btn-secondary" id="test-sub2api-service-btn">🔌 测试连接</button>
                                 <button type="button" class="btn btn-secondary" id="cancel-sub2api-service-btn">取消</button>
                             </div>

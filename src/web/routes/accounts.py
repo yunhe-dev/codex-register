@@ -792,6 +792,7 @@ class Sub2ApiUploadRequest(BaseModel):
     service_id: Optional[int] = None
     concurrency: int = 3
     priority: int = 50
+    group_ids: Optional[List[int]] = None
 
 
 @router.post("/{account_id}/upload-sub2api")
@@ -802,6 +803,7 @@ async def upload_account_to_sub2api(account_id: int, request: Sub2ApiUploadReque
     service_id = request.service_id if request else None
     concurrency = request.concurrency if request else 3
     priority = request.priority if request else 50
+    group_ids = request.group_ids if request else None
 
     api_url = None
     api_key = None
@@ -812,12 +814,16 @@ async def upload_account_to_sub2api(account_id: int, request: Sub2ApiUploadReque
                 raise HTTPException(status_code=404, detail="指定的 Sub2API 服务不存在")
             api_url = svc.api_url
             api_key = svc.api_key
+            if group_ids is None:
+                group_ids = svc.group_ids or []
     else:
         with get_db() as db:
             svcs = crud.get_sub2api_services(db, enabled=True)
             if svcs:
                 api_url = svcs[0].api_url
                 api_key = svcs[0].api_key
+                if group_ids is None:
+                    group_ids = svcs[0].group_ids or []
 
     if not api_url or not api_key:
         raise HTTPException(status_code=400, detail="未找到可用的 Sub2API 服务，请先在设置中配置")
@@ -831,7 +837,8 @@ async def upload_account_to_sub2api(account_id: int, request: Sub2ApiUploadReque
 
         success, message = upload_to_sub2api(
             [account], api_url, api_key,
-            concurrency=concurrency, priority=priority
+            concurrency=concurrency, priority=priority,
+            group_ids=group_ids or [],
         )
         if success:
             return {"success": True, "message": message}
@@ -849,6 +856,7 @@ class BatchSub2ApiUploadRequest(BaseModel):
     service_id: Optional[int] = None  # 指定 Sub2API 服务 ID，不传则使用第一个启用的
     concurrency: int = 3
     priority: int = 50
+    group_ids: Optional[List[int]] = None
 
 
 @router.post("/batch-upload-sub2api")
@@ -859,6 +867,7 @@ async def batch_upload_accounts_to_sub2api(request: BatchSub2ApiUploadRequest):
     # 解析指定的 Sub2API 服务
     api_url = None
     api_key = None
+    group_ids = request.group_ids
     if request.service_id:
         with get_db() as db:
             svc = crud.get_sub2api_service_by_id(db, request.service_id)
@@ -866,12 +875,16 @@ async def batch_upload_accounts_to_sub2api(request: BatchSub2ApiUploadRequest):
                 raise HTTPException(status_code=404, detail="指定的 Sub2API 服务不存在")
             api_url = svc.api_url
             api_key = svc.api_key
+            if group_ids is None:
+                group_ids = svc.group_ids or []
     else:
         with get_db() as db:
             svcs = crud.get_sub2api_services(db, enabled=True)
             if svcs:
                 api_url = svcs[0].api_url
                 api_key = svcs[0].api_key
+                if group_ids is None:
+                    group_ids = svcs[0].group_ids or []
 
     if not api_url or not api_key:
         raise HTTPException(status_code=400, detail="未找到可用的 Sub2API 服务，请先在设置中配置")
@@ -886,5 +899,6 @@ async def batch_upload_accounts_to_sub2api(request: BatchSub2ApiUploadRequest):
         ids, api_url, api_key,
         concurrency=request.concurrency,
         priority=request.priority,
+        group_ids=group_ids or [],
     )
     return results
