@@ -133,6 +133,7 @@ class RegistrationEngine:
         self.logs: list = []
         self._otp_sent_at: Optional[float] = None  # OTP 发送时间戳
         self._is_existing_account: bool = False  # 是否为已注册账号（用于自动登录）
+        self._workspace_recovered_by_login: bool = False  # 是否通过降级登录补齐 workspace
 
     def _log(self, message: str, level: str = "info"):
         """记录日志"""
@@ -461,6 +462,11 @@ class RegistrationEngine:
 
     def _validate_verification_code(self, code: str) -> bool:
         """验证验证码"""
+        ok, _ = self._validate_verification_code_with_continue_url(code)
+        return ok
+
+    def _validate_verification_code_with_continue_url(self, code: str) -> Tuple[bool, Optional[str]]:
+        """验证验证码并返回 continue_url（如有）"""
         try:
             code_body = f'{{"code":"{code}"}}'
 
@@ -475,11 +481,23 @@ class RegistrationEngine:
             )
 
             self._log(f"验证码校验状态: {response.status_code}")
-            return response.status_code == 200
+            if response.status_code != 200:
+                return False, None
+
+            continue_url = ""
+            try:
+                payload = response.json() or {}
+                continue_url = str(payload.get("continue_url") or "").strip()
+                if continue_url:
+                    self._log(f"OTP 校验返回 continue_url: {continue_url[:100]}...")
+            except Exception:
+                continue_url = ""
+
+            return True, continue_url
 
         except Exception as e:
             self._log(f"验证验证码失败: {e}", "error")
-            return False
+            return False, None
 
     def _create_user_account(self) -> bool:
         """创建用户账户"""
@@ -509,6 +527,152 @@ class RegistrationEngine:
         except Exception as e:
             self._log(f"创建账户失败: {e}", "error")
             return False
+
+    def _reset_session_for_login_fallback(self) -> bool:
+        """重置 HTTP 会话并生成新的 OAuth 上下文（用于降级登录）"""
+        try:
+            self._log("重置 HTTP 会话，准备降级登录流程...")
+            self.http_client.close()
+            self.session = None
+            self.oauth_start = None
+
+            if not self._init_session():
+                return False
+
+            if not self._start_oauth():
+                return False
+
+            self._log("降级登录会话已重建")
+            return True
+        except Exception as e:
+            self._log(f"重置降级登录会话失败: {e}", "error")
+            return False
+
+    def _submit_login_form(self, did: str, sen_token: Optional[str]) -> bool:
+        """提交登录入口（screen_hint=login）"""
+        try:
+            login_body = f'{{"username":{{"value":"{self.email}","kind":"email"}},"screen_hint":"login"}}'
+            headers = {
+                "referer": "https://auth.openai.com/u/login/identifier",
+                "accept": "application/json",
+                "content-type": "application/json",
+            }
+
+            if sen_token:
+                sentinel = f'{{"p": "", "t": "", "c": "{sen_token}", "id": "{did}", "flow": "authorize_continue"}}'
+                headers["openai-sentinel-token"] = sentinel
+
+            response = self.session.post(
+                OPENAI_API_ENDPOINTS["signup"],
+                headers=headers,
+                data=login_body,
+            )
+
+            self._log(f"提交登录表单状态: {response.status_code}")
+            if response.status_code != 200:
+                self._log(f"登录入口失败: {response.text[:200]}", "error")
+                return False
+
+            page_type = ""
+            try:
+                page_type = str((response.json() or {}).get("page", {}).get("type") or "")
+            except Exception:
+                page_type = ""
+
+            if page_type:
+                self._log(f"登录页面类型: {page_type}")
+            return True
+
+        except Exception as e:
+            self._log(f"提交登录表单失败: {e}", "error")
+            return False
+
+    def _send_passwordless_otp(self) -> bool:
+        """通过 passwordless 端点发送 OTP（无 body）"""
+        try:
+            self._otp_sent_at = time.time()
+            response = self.session.post(
+                OPENAI_API_ENDPOINTS["passwordless_send_otp"],
+                headers={
+                    "referer": "https://auth.openai.com/u/login/password",
+                    "accept": "application/json",
+                },
+            )
+
+            self._log(f"Passwordless OTP 发送状态: {response.status_code}")
+            if response.status_code != 200:
+                self._log(f"Passwordless OTP 发送失败: {response.text[:200]}", "warning")
+                return False
+            return True
+
+        except Exception as e:
+            self._log(f"发送 Passwordless OTP 失败: {e}", "error")
+            return False
+
+    def _visit_continue_url(self, continue_url: str) -> bool:
+        """访问 validate 返回的 continue_url，触发服务端重签 Cookie"""
+        try:
+            response = self.session.get(
+                continue_url,
+                headers={"referer": "https://auth.openai.com/u/login/passwordless-email-otp"},
+                timeout=20,
+            )
+            self._log(f"访问 continue_url 状态: {response.status_code}")
+            return response.status_code < 400
+        except Exception as e:
+            self._log(f"访问 continue_url 失败: {e}", "error")
+            return False
+
+    def _recover_workspace_by_login_fallback(self) -> Optional[str]:
+        """当注册后 Cookie 缺少 workspaces 时，降级执行登录流程补齐 workspace"""
+        try:
+            self._log("检测到 workspace 缺失，开始降级登录流程...")
+
+            if not self._reset_session_for_login_fallback():
+                return None
+
+            did = self._get_device_id()
+            if not did:
+                self._log("降级登录失败：无法获取 Device ID", "error")
+                return None
+
+            sen_token = self._check_sentinel(did)
+            if sen_token:
+                self._log("降级登录 Sentinel 校验通过")
+            else:
+                self._log("降级登录 Sentinel 未返回 token，继续尝试", "warning")
+
+            if not self._submit_login_form(did, sen_token):
+                return None
+
+            if not self._send_passwordless_otp():
+                return None
+
+            self._log("等待降级登录验证码...")
+            code = self._get_verification_code()
+            if not code:
+                return None
+
+            ok, continue_url = self._validate_verification_code_with_continue_url(code)
+            if not ok:
+                return None
+
+            if not continue_url:
+                self._log("OTP 校验成功但缺少 continue_url", "error")
+                return None
+
+            if not self._visit_continue_url(continue_url):
+                return None
+
+            workspace_id = self._get_workspace_id()
+            if workspace_id:
+                self._workspace_recovered_by_login = True
+                self._log("降级登录成功补齐 workspace 信息")
+            return workspace_id
+
+        except Exception as e:
+            self._log(f"降级登录流程失败: {e}", "error")
+            return None
 
     def _get_workspace_id(self) -> Optional[str]:
         """获取 Workspace ID"""
@@ -769,8 +933,11 @@ class RegistrationEngine:
             self._log("13. 获取 Workspace ID...")
             workspace_id = self._get_workspace_id()
             if not workspace_id:
-                result.error_message = "获取 Workspace ID 失败"
-                return result
+                self._log("注册后 Cookie 缺少 workspace，尝试降级登录流程修复...")
+                workspace_id = self._recover_workspace_by_login_fallback()
+                if not workspace_id:
+                    result.error_message = "获取 Workspace ID 失败（降级登录后仍失败）"
+                    return result
 
             result.workspace_id = workspace_id
 
@@ -829,6 +996,7 @@ class RegistrationEngine:
                 "proxy_used": self.proxy_url,
                 "registered_at": datetime.now().isoformat(),
                 "is_existing_account": self._is_existing_account,
+                "workspace_recovered_by_login": self._workspace_recovered_by_login,
             }
 
             return result

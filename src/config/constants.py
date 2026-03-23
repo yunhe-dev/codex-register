@@ -62,6 +62,7 @@ OPENAI_API_ENDPOINTS = {
     "signup": "https://auth.openai.com/api/accounts/authorize/continue",
     "register": "https://auth.openai.com/api/accounts/user/register",
     "send_otp": "https://auth.openai.com/api/accounts/email-otp/send",
+    "passwordless_send_otp": "https://auth.openai.com/api/accounts/passwordless/send-otp",
     "validate_otp": "https://auth.openai.com/api/accounts/email-otp/validate",
     "create_account": "https://auth.openai.com/api/accounts/create_account",
     "select_workspace": "https://auth.openai.com/api/accounts/workspace/select",
