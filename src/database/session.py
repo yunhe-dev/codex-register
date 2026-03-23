@@ -4,7 +4,7 @@
 
 from contextlib import contextmanager
 from typing import Generator
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import SQLAlchemyError
 import os
@@ -97,41 +97,60 @@ class DatabaseSessionManager:
         数据库迁移 - 添加缺失的列
         用于在不删除数据的情况下更新表结构
         """
-        if not self.database_url.startswith("sqlite"):
-            logger.info("非 SQLite 数据库，跳过自动迁移")
-            return
-
         # 需要检查和添加的新列
         migrations = [
-            # (表名, 列名, 列类型)
-            ("accounts", "cpa_uploaded", "BOOLEAN DEFAULT 0"),
-            ("accounts", "cpa_uploaded_at", "DATETIME"),
-            ("accounts", "source", "VARCHAR(20) DEFAULT 'register'"),
-            ("accounts", "subscription_type", "VARCHAR(20)"),
-            ("accounts", "subscription_at", "DATETIME"),
-            ("accounts", "cookies", "TEXT"),
-            ("proxies", "is_default", "BOOLEAN DEFAULT 0"),
-            ("sub2api_services", "group_ids", "TEXT"),
+            # (表名, 列名, 各数据库类型定义)
+            ("accounts", "cpa_uploaded", {
+                "default": "BOOLEAN DEFAULT FALSE",
+            }),
+            ("accounts", "cpa_uploaded_at", {
+                "default": "TIMESTAMP",
+            }),
+            ("accounts", "source", {
+                "default": "VARCHAR(20) DEFAULT 'register'",
+            }),
+            ("accounts", "subscription_type", {
+                "default": "VARCHAR(20)",
+            }),
+            ("accounts", "subscription_at", {
+                "default": "TIMESTAMP",
+            }),
+            ("accounts", "cookies", {
+                "default": "TEXT",
+            }),
+            ("proxies", "is_default", {
+                "default": "BOOLEAN DEFAULT FALSE",
+            }),
+            ("sub2api_services", "group_ids", {
+                "default": "TEXT DEFAULT '[]'",
+            }),
         ]
 
         # 确保新表存在（create_tables 已处理，此处兜底）
         Base.metadata.create_all(bind=self.engine)
 
+        dialect_name = self.engine.dialect.name
+        inspector = inspect(self.engine)
+
         with self.engine.connect() as conn:
-            for table_name, column_name, column_type in migrations:
+            for table_name, column_name, column_types in migrations:
                 try:
-                    # 检查列是否存在
-                    result = conn.execute(text(
-                        f"SELECT * FROM pragma_table_info('{table_name}') WHERE name='{column_name}'"
-                    ))
-                    if result.fetchone() is None:
-                        # 列不存在，添加它
+                    existing_columns = {col["name"] for col in inspector.get_columns(table_name)}
+                    if column_name not in existing_columns:
+                        column_type = column_types.get(dialect_name) or column_types["default"]
                         logger.info(f"添加列 {table_name}.{column_name}")
                         conn.execute(text(
                             f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"
                         ))
                         conn.commit()
                         logger.info(f"成功添加列 {table_name}.{column_name}")
+
+                    if table_name == "sub2api_services" and column_name == "group_ids":
+                        conn.execute(text(
+                            "UPDATE sub2api_services SET group_ids = '[]' "
+                            "WHERE group_ids IS NULL OR group_ids = ''"
+                        ))
+                        conn.commit()
                 except Exception as e:
                     logger.warning(f"迁移列 {table_name}.{column_name} 时出错: {e}")
 
