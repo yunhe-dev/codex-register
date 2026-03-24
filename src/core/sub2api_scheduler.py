@@ -4,6 +4,7 @@ Sub2API 自动维护与补注册调度器。
 
 import asyncio
 import logging
+import threading
 import uuid
 from collections import deque
 from typing import Optional, Tuple
@@ -25,6 +26,9 @@ system_logs = deque(maxlen=500)
 
 _is_checking = False
 _scheduler_task: Optional[asyncio.Task] = None
+_auto_registering_services = set()
+_auto_registering_lock = threading.Lock()
+AUTO_REGISTER_MAX_ROUNDS = 5
 
 
 def append_system_log(level: str, msg: str):
@@ -72,34 +76,99 @@ async def trigger_auto_registration(count: int, sub2api_service_id: int):
     if count <= 0:
         return
 
-    task_uuids = [str(uuid.uuid4()) for _ in range(count)]
-    batch_id = str(uuid.uuid4())
-    settings = get_settings()
-    email_service_type, email_service_id = _resolve_auto_register_email_service()
+    with _auto_registering_lock:
+        if sub2api_service_id in _auto_registering_services:
+            append_system_log("warning", f"服务 {sub2api_service_id} 已有自动补注册任务在运行，跳过重复触发")
+            return
+        _auto_registering_services.add(sub2api_service_id)
 
-    with get_db() as db:
-        for task_uuid in task_uuids:
-            crud.create_registration_task(
-                db,
-                task_uuid=task_uuid,
-                email_service_id=email_service_id,
-                proxy=None,
+    try:
+        settings = get_settings()
+        email_service_type, email_service_id = _resolve_auto_register_email_service()
+        target_success_count = count
+        remaining_to_create = count
+        total_success_count = 0
+        round_index = 0
+
+        append_system_log(
+            "info",
+            f"开始为服务 {sub2api_service_id} 自动补注册，目标成功补充 {target_success_count} 个账号",
+        )
+
+        while remaining_to_create > 0 and round_index < AUTO_REGISTER_MAX_ROUNDS:
+            round_index += 1
+            task_uuids = [str(uuid.uuid4()) for _ in range(remaining_to_create)]
+            batch_id = str(uuid.uuid4())
+
+            with get_db() as db:
+                for task_uuid in task_uuids:
+                    crud.create_registration_task(
+                        db,
+                        task_uuid=task_uuid,
+                        email_service_id=email_service_id,
+                        proxy=None,
+                    )
+
+            append_system_log(
+                "info",
+                f"自动补注册第 {round_index} 轮开始，本轮提交 {remaining_to_create} 个任务",
             )
 
-    await run_batch_registration(
-        batch_id=batch_id,
-        task_uuids=task_uuids,
-        email_service_type=email_service_type,
-        proxy=None,
-        email_service_config=None,
-        email_service_id=email_service_id,
-        interval_min=settings.registration_sleep_min,
-        interval_max=settings.registration_sleep_max,
-        concurrency=2,
-        mode="pipeline",
-        auto_upload_sub2api=True,
-        sub2api_service_ids=[sub2api_service_id],
-    )
+            await run_batch_registration(
+                batch_id=batch_id,
+                task_uuids=task_uuids,
+                email_service_type=email_service_type,
+                proxy=None,
+                email_service_config=None,
+                email_service_id=email_service_id,
+                interval_min=settings.registration_sleep_min,
+                interval_max=settings.registration_sleep_max,
+                concurrency=2,
+                mode="pipeline",
+                auto_upload_sub2api=True,
+                sub2api_service_ids=[sub2api_service_id],
+            )
+
+            round_success_count = 0
+            with get_db() as db:
+                for task_uuid in task_uuids:
+                    task = crud.get_registration_task_by_uuid(db, task_uuid)
+                    if not task or task.status != "completed":
+                        continue
+                    task_result = task.result or {}
+                    upload_success = task_result.get("sub2api_upload_success")
+                    if upload_success is False:
+                        continue
+                    round_success_count += 1
+
+            total_success_count += round_success_count
+            remaining_to_create = max(0, target_success_count - total_success_count)
+
+            append_system_log(
+                "info",
+                f"自动补注册第 {round_index} 轮完成，成功补充 {round_success_count} 个，累计成功 {total_success_count}/{target_success_count}",
+            )
+
+            if round_success_count == 0 and remaining_to_create > 0:
+                append_system_log(
+                    "warning",
+                    f"自动补注册第 {round_index} 轮没有新增成功账号，停止继续重试，剩余缺口 {remaining_to_create}",
+                )
+                break
+
+        if remaining_to_create == 0:
+            append_system_log(
+                "info",
+                f"服务 {sub2api_service_id} 自动补注册完成，已按成功数补齐 {target_success_count} 个账号",
+            )
+        else:
+            append_system_log(
+                "warning",
+                f"服务 {sub2api_service_id} 自动补注册结束，目标 {target_success_count}，实际成功 {total_success_count}，剩余缺口 {remaining_to_create}",
+            )
+    finally:
+        with _auto_registering_lock:
+            _auto_registering_services.discard(sub2api_service_id)
 
 
 def check_sub2api_services_job(main_loop, manual_logs: list = None):

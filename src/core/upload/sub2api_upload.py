@@ -79,6 +79,100 @@ def _sub2api_payload_indicates_failure(payload: Any) -> Optional[str]:
     return None
 
 
+def _extract_json_from_text(text: str) -> Optional[Any]:
+    if not text:
+        return None
+    text = text.strip()
+    if not text:
+        return None
+
+    if text.startswith("{") or text.startswith("["):
+        import json
+        try:
+            return json.loads(text)
+        except Exception:
+            return None
+    return None
+
+
+def _extract_sub2api_failure_from_text(text: str) -> Optional[str]:
+    if not text:
+        return None
+
+    parsed = _extract_json_from_text(text)
+    if parsed is not None:
+        return _sub2api_payload_indicates_failure(parsed) or _extract_sub2api_message(parsed, "")
+
+    normalized = text.lower()
+    keywords = (
+        "account_deactivated",
+        "deactivated",
+        "invalid_api_key",
+        "insufficient_quota",
+        "usage_limit_reached",
+        "token expired",
+        "invalid token",
+        "unauthorized",
+        "forbidden",
+    )
+    if any(keyword in normalized for keyword in keywords):
+        return text.strip()
+    return None
+
+
+def _parse_sse_test_events(text: str) -> Tuple[Optional[bool], Optional[str]]:
+    """
+    解析 Sub2API /test 接口的 SSE 响应。
+
+    返回:
+        (False, reason): 明确失败
+        (True, message): 明确成功
+        (None, None): 无法从 SSE 中判定
+    """
+    if not text:
+        return None, None
+
+    data_lines = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("data:"):
+            data_lines.append(stripped[5:].strip())
+
+    if not data_lines:
+        return None, None
+
+    saw_success_signal = False
+    for payload_text in data_lines:
+        payload = _extract_json_from_text(payload_text)
+        if not isinstance(payload, dict):
+            failure = _extract_sub2api_failure_from_text(payload_text)
+            if failure:
+                return False, failure
+            continue
+
+        event_type = str(payload.get("type") or "").strip().lower()
+        if event_type in {"error", "test_error", "failed"}:
+            error_text = payload.get("error") or payload.get("message") or payload_text
+            failure = _extract_sub2api_failure_from_text(str(error_text)) or str(error_text)
+            return False, failure
+
+        if event_type in {"result", "test_result", "complete", "completed", "success"}:
+            failure = _sub2api_payload_indicates_failure(payload)
+            if failure:
+                return False, failure
+            saw_success_signal = True
+            continue
+
+        failure = _sub2api_payload_indicates_failure(payload)
+        if failure:
+            return False, failure
+
+    if saw_success_signal:
+        return True, "账号测试成功"
+
+    return None, None
+
+
 def _parse_sub2api_accounts_payload(payload: Any, page_size: int) -> Tuple[List[Dict[str, Any]], bool]:
     data = payload.get("data") if isinstance(payload, dict) else payload
     items: List[Dict[str, Any]] = []
@@ -459,6 +553,12 @@ def test_sub2api_account(api_url: str, api_key: str, account_id: int) -> Tuple[O
     try:
         payload = response.json()
     except Exception:
+        sse_result, sse_message = _parse_sse_test_events(getattr(response, "text", ""))
+        if sse_result is not None:
+            return sse_result, sse_message or "账号测试完成"
+        failure = _extract_sub2api_failure_from_text(getattr(response, "text", ""))
+        if failure:
+            return False, failure
         return True, "账号测试成功"
 
     failure_reason = _sub2api_payload_indicates_failure(payload)

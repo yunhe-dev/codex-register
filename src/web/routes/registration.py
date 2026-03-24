@@ -409,6 +409,7 @@ def _run_sync_registration_task(task_uuid: str, email_service_type: str, proxy: 
             result = engine.run()
 
             if result.success:
+                sub2api_upload_success: Optional[bool] = None
                 # 更新代理使用时间
                 update_proxy_usage(db, proxy_id)
 
@@ -463,20 +464,29 @@ def _run_sync_registration_task(task_uuid: str, email_service_type: str, proxy: 
                                 _s2a_ids = [s.id for s in crud.get_sub2api_services(db, enabled=True)]
                             if not _s2a_ids:
                                 log_callback("[Sub2API] 无可用 Sub2API 服务，跳过上传")
+                                sub2api_upload_success = False
+                            else:
+                                sub2api_upload_success = True
                             for _sid in _s2a_ids:
                                 try:
                                     _svc = crud.get_sub2api_service_by_id(db, _sid)
                                     if not _svc:
+                                        sub2api_upload_success = False
                                         continue
                                     log_callback(f"[Sub2API] 上传到服务: {_svc.name}")
                                     _ok, _msg = upload_to_sub2api(
                                         [saved_account], _svc.api_url, _svc.api_key,
                                         group_ids=_svc.group_ids or [],
                                     )
+                                    sub2api_upload_success = bool(sub2api_upload_success and _ok)
                                     log_callback(f"[Sub2API] {'成功' if _ok else '失败'}({_svc.name}): {_msg}")
                                 except Exception as _e:
+                                    sub2api_upload_success = False
                                     log_callback(f"[Sub2API] 异常({_sid}): {_e}")
+                        else:
+                            sub2api_upload_success = False
                     except Exception as s2a_err:
+                        sub2api_upload_success = False
                         log_callback(f"[Sub2API] 上传异常: {s2a_err}")
 
                 # 自动上传到 Team Manager（可多服务）
@@ -512,6 +522,7 @@ def _run_sync_registration_task(task_uuid: str, email_service_type: str, proxy: 
                     result={
                         **result.to_dict(),
                         "email_service": service_type.value,
+                        "sub2api_upload_success": sub2api_upload_success,
                     }
                 )
 
