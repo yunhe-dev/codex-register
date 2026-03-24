@@ -203,10 +203,86 @@ class RegistrationEngine:
             self._log(f"生成 OAuth URL 失败: {e}", 'error')
             return False
 
+    def _is_invalid_auth_step_error(self, error_message: str) -> bool:
+        """判断是否为授权步骤失效错误。"""
+        text = str(error_message or "").lower()
+        return "invalid_auth_step" in text or "invalid authorization step" in text
+
+    def _get_session_cookie_names(self) -> list[str]:
+        if not self.session:
+            return []
+        try:
+            return sorted({cookie.name for cookie in self.session.cookies})
+        except Exception:
+            try:
+                return sorted(self.session.cookies.keys())
+            except Exception:
+                return []
+
+    def _log_auth_context(self, stage: str):
+        """输出授权上下文诊断信息，便于比对本地与云端差异。"""
+        cookie_names = self._get_session_cookie_names()
+        preview = cookie_names[:10]
+        if len(cookie_names) > 10:
+            preview.append(f"...(+{len(cookie_names) - 10})")
+        self._log(
+            f"[诊断] {stage}: redirect_uri={self.oauth_manager.redirect_uri}, "
+            f"has_oauth_start={bool(self.oauth_start)}, cookies={preview}"
+        )
+
+    def _rebuild_http_session(self):
+        """重建 HTTP session，避免旧会话里的授权状态污染下一次尝试。"""
+        try:
+            self.http_client.close()
+        except Exception as e:
+            self._log(f"重建会话时关闭旧 HTTP client 失败: {e}", "warning")
+        self.session = self.http_client.session
+        self._log_auth_context("session_rebuilt")
+
+    def _warmup_authorization_context(self):
+        """
+        在提交 signup 前再访问一次授权 URL，尽量让 auth transaction 更完整。
+        """
+        if not self.oauth_start or not self.session:
+            return
+        try:
+            response = self.session.get(
+                self.oauth_start.auth_url,
+                timeout=20,
+                allow_redirects=True,
+            )
+            self._log(f"[诊断] 授权预热状态: {response.status_code}")
+            self._log_auth_context("after_auth_warmup")
+        except Exception as e:
+            self._log(f"[诊断] 授权预热失败: {e}", "warning")
+
+    def _retry_signup_after_refresh(self) -> SignupFormResult:
+        """
+        刷新授权上下文后重试一次提交注册表单。
+        """
+        self._log("检测到授权步骤失效，正在重建会话并刷新授权上下文后重试一次...", "warning")
+        self._rebuild_http_session()
+        if not self._start_oauth():
+            return SignupFormResult(success=False, error_message="刷新 OAuth 流程失败")
+
+        did = self._get_device_id()
+        if not did:
+            return SignupFormResult(success=False, error_message="刷新后获取 Device ID 失败")
+
+        self._warmup_authorization_context()
+        sen_token = self._check_sentinel(did)
+        if sen_token:
+            self._log("刷新后的 Sentinel 检查通过")
+        else:
+            self._log("刷新后的 Sentinel 检查失败或未启用", "warning")
+
+        return self._submit_signup_form(did, sen_token)
+
     def _init_session(self) -> bool:
         """初始化会话"""
         try:
             self.session = self.http_client.session
+            self._log_auth_context("session_initialized")
             return True
         except Exception as e:
             self._log(f"初始化会话失败: {e}", 'error')
@@ -250,6 +326,7 @@ class RegistrationEngine:
                     timeout=20
                 )
                 did = self.session.cookies.get("oai-did")
+                self._log_auth_context("after_device_id_request")
 
                 if did:
                     self._log(f"Device ID: {did}")
@@ -320,6 +397,8 @@ class RegistrationEngine:
                 sentinel = f'{{"p": "", "t": "", "c": "{sen_token}", "id": "{did}", "flow": "authorize_continue"}}'
                 headers["openai-sentinel-token"] = sentinel
 
+            self._log_auth_context("before_signup_submit")
+
             response = self.session.post(
                 OPENAI_API_ENDPOINTS["signup"],
                 headers=headers,
@@ -329,6 +408,12 @@ class RegistrationEngine:
             self._log(f"提交注册表单状态: {response.status_code}")
 
             if response.status_code != 200:
+                header_subset = {
+                    key: value for key, value in response.headers.items()
+                    if key.lower() in {"x-request-id", "cf-ray", "content-type", "location"}
+                }
+                self._log(f"[诊断] 提交注册表单响应头: {header_subset}", "warning")
+                self._log_auth_context("signup_submit_failed")
                 return SignupFormResult(
                     success=False,
                     error_message=f"HTTP {response.status_code}: {response.text[:200]}"
@@ -911,9 +996,13 @@ class RegistrationEngine:
             else:
                 self._log("Sentinel 检查失败或未启用", "warning")
 
+            self._warmup_authorization_context()
+
             # 7. 提交注册表单 + 解析响应判断账号状态
             self._log("7. 提交注册表单...")
             signup_result = self._submit_signup_form(did, sen_token)
+            if (not signup_result.success) and self._is_invalid_auth_step_error(signup_result.error_message):
+                signup_result = self._retry_signup_after_refresh()
             if not signup_result.success:
                 result.error_message = f"提交注册表单失败: {signup_result.error_message}"
                 return result

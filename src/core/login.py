@@ -326,9 +326,13 @@ class LoginEngine(RegistrationEngine):
             else:
                 self._log("Sentinel 检查失败或未启用", "warning")
 
+            self._warmup_authorization_context()
+
             # 7. 提交注册表单 + 解析响应判断账号状态
             self._log("7. 提交注册表单...")
             signup_result = self._submit_signup_form(did, sen_token)
+            if (not signup_result.success) and self._is_invalid_auth_step_error(signup_result.error_message):
+                signup_result = self._retry_signup_after_refresh()
             if not signup_result.success:
                 result.error_message = f"提交注册表单失败: {signup_result.error_message}"
                 return result

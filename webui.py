@@ -104,6 +104,12 @@ def start_webui():
     logger = logging.getLogger(__name__)
     logger.info(f"启动 Web UI 在 http://{settings.webui_host}:{settings.webui_port}")
     logger.info(f"调试模式: {settings.debug}")
+    logger.info(f"OpenAI redirect_uri: {settings.openai_redirect_uri}")
+    logger.info(
+        "环境变量端口: WEBUI_PORT=%s APP_PORT=%s",
+        os.environ.get("WEBUI_PORT"),
+        os.environ.get("APP_PORT"),
+    )
 
     # 启动服务器
     uvicorn.run(**uvicorn_config)

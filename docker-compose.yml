@@ -4,10 +4,10 @@ services:
   webui:
     build: .
     ports:
-      - "15555:15555"
+      - "8000:8000"
     environment:
       - WEBUI_HOST=0.0.0.0
-      - WEBUI_PORT=15555
+      - WEBUI_PORT=8000
       - DEBUG=0
       - LOG_LEVEL=info
       # 如果需要访问密码，可以在这里取消注释并设置
