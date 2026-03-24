@@ -303,6 +303,51 @@
                                     </div>
                                 </div>
 
+                                <div class="form-group" id="sub2api-scheduler-group" style="padding-top: var(--spacing-sm); border-top: 1px solid var(--border-light); margin-top: var(--spacing-sm);">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-xs);">
+                                        <label style="font-weight: 500; margin-bottom: 0;">Sub2API 自动维护与补注册 <span id="sub2api-scheduler-status-badge" style="font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; margin-left: 6px;"></span></label>
+                                        <button type="button" class="btn btn-ghost btn-sm" id="sub2api-force-check-btn" style="padding: 2px 8px; font-size: 0.75rem;">立即检查一次</button>
+                                    </div>
+                                    <label style="display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer; margin-top: 6px;">
+                                        <input type="checkbox" id="sub2api-auto-check-enabled">
+                                        <span>启用远端账号自动维护</span>
+                                    </label>
+                                    <div style="margin-top: 6px; padding-left: 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                                        <div class="form-group">
+                                            <label for="sub2api-check-interval" style="font-size: 0.8rem; color: var(--text-muted);">定时运行间隔 (分钟)</label>
+                                            <input type="number" id="sub2api-check-interval" min="1" max="1440" value="60" style="padding: 4px 8px; font-size: 0.8rem;">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="sub2api-check-sleep" style="font-size: 0.8rem; color: var(--text-muted);">单账号测活间隔 (秒)</label>
+                                            <input type="number" id="sub2api-check-sleep" min="0" max="60" value="1" style="padding: 4px 8px; font-size: 0.8rem;">
+                                        </div>
+                                    </div>
+                                    <label style="display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer; margin-top: 12px;">
+                                        <input type="checkbox" id="sub2api-auto-register-enabled">
+                                        <span>低库存时自动补注册并回传</span>
+                                    </label>
+                                    <div style="margin-top: 6px; padding-left: 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                                        <div class="form-group">
+                                            <label for="sub2api-register-threshold" style="font-size: 0.8rem; color: var(--text-muted);">少于此阈值即触发</label>
+                                            <input type="number" id="sub2api-register-threshold" min="1" max="1000" value="10" style="padding: 4px 8px; font-size: 0.8rem;">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="sub2api-register-batch-count" style="font-size: 0.8rem; color: var(--text-muted);">每次自动补充数量</label>
+                                            <input type="number" id="sub2api-register-batch-count" min="1" max="50" value="5" style="padding: 4px 8px; font-size: 0.8rem;">
+                                        </div>
+                                    </div>
+                                    <div style="margin-top: 6px; padding-left: 24px;">
+                                        <div class="form-group">
+                                            <label for="sub2api-scheduler-email-service" style="font-size: 0.8rem; color: var(--text-muted);">自动补注册使用的邮箱服务</label>
+                                            <select id="sub2api-scheduler-email-service" style="padding: 4px 8px; font-size: 0.8rem;"></select>
+                                        </div>
+                                    </div>
+                                    <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px; width: 100%;">
+                                        <button type="button" class="btn btn-secondary btn-lg" id="sub2api-save-config-btn" style="width: 100%;">保存并应用配置</button>
+                                        <button type="button" class="btn btn-danger btn-lg" id="sub2api-stop-task-btn" style="width: 100%;">停止自动任务</button>
+                                    </div>
+                                </div>
+
                                 <div class="form-actions" style="flex-direction: column;">
                                     <button type="submit" class="btn btn-primary btn-lg" id="start-btn" style="width: 100%;">
                                         🚀 开始注册

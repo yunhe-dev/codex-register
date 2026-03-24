@@ -174,6 +174,7 @@ def create_app() -> FastAPI:
         """应用启动事件"""
         import asyncio
         from ..database.init_db import initialize_database
+        from ..core.sub2api_scheduler import start_sub2api_scheduler
 
         # 确保数据库已初始化（reload 模式下子进程也需要初始化）
         try:
@@ -184,6 +185,7 @@ def create_app() -> FastAPI:
         # 设置 TaskManager 的事件循环
         loop = asyncio.get_event_loop()
         task_manager.set_loop(loop)
+        start_sub2api_scheduler()
 
         logger.info("=" * 50)
         logger.info(f"{settings.app_name} v{settings.app_version} 启动中...")
@@ -194,6 +196,9 @@ def create_app() -> FastAPI:
     @app.on_event("shutdown")
     async def shutdown_event():
         """应用关闭事件"""
+        from ..core.sub2api_scheduler import stop_sub2api_scheduler
+
+        stop_sub2api_scheduler()
         logger.info("应用关闭")
 
     return app

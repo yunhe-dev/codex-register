@@ -35,6 +35,8 @@ let wsHeartbeatInterval = null;  // 心跳定时器
 let batchWsHeartbeatInterval = null;  // 批量任务心跳定时器
 let activeTaskUuid = null;   // 当前活跃的单任务 UUID（用于页面重新可见时重连）
 let activeBatchId = null;    // 当前活跃的批量任务 ID（用于页面重新可见时重连）
+let systemLogPollingInterval = null;
+let lastSystemLogId = 0;
 
 // DOM 元素
 const elements = {
@@ -94,17 +96,33 @@ const elements = {
     autoUploadTm: document.getElementById('auto-upload-tm'),
     tmServiceSelectGroup: document.getElementById('tm-service-select-group'),
     tmServiceSelect: document.getElementById('tm-service-select'),
+    // Sub2API 自动维护
+    sub2apiSchedulerStatusBadge: document.getElementById('sub2api-scheduler-status-badge'),
+    sub2apiForceCheckBtn: document.getElementById('sub2api-force-check-btn'),
+    sub2apiAutoCheckEnabled: document.getElementById('sub2api-auto-check-enabled'),
+    sub2apiCheckInterval: document.getElementById('sub2api-check-interval'),
+    sub2apiCheckSleep: document.getElementById('sub2api-check-sleep'),
+    sub2apiAutoRegisterEnabled: document.getElementById('sub2api-auto-register-enabled'),
+    sub2apiRegisterThreshold: document.getElementById('sub2api-register-threshold'),
+    sub2apiRegisterBatchCount: document.getElementById('sub2api-register-batch-count'),
+    sub2apiSchedulerEmailService: document.getElementById('sub2api-scheduler-email-service'),
+    sub2apiSaveConfigBtn: document.getElementById('sub2api-save-config-btn'),
+    sub2apiStopTaskBtn: document.getElementById('sub2api-stop-task-btn'),
 };
 
 // 初始化
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     initEventListeners();
-    loadAvailableServices();
+    await Promise.all([
+        loadAvailableServices(),
+        initAutoUploadOptions(),
+    ]);
+    populateSub2ApiSchedulerEmailServiceOptions();
+    await loadSub2ApiSchedulerConfig();
     loadRecentAccounts();
     startAccountsPolling();
     initVisibilityReconnect();
     restoreActiveTask();
-    initAutoUploadOptions();
 });
 
 // 初始化注册后自动操作选项（CPA / Sub2API / TM）
@@ -218,6 +236,18 @@ function initEventListeners() {
     elements.outlookConcurrencyMode.addEventListener('change', () => {
         handleConcurrencyModeChange(elements.outlookConcurrencyMode, elements.outlookConcurrencyHint, elements.outlookIntervalGroup);
     });
+
+    if (elements.sub2apiSaveConfigBtn) {
+        elements.sub2apiSaveConfigBtn.addEventListener('click', handleSaveSub2ApiSchedulerConfig);
+    }
+    if (elements.sub2apiStopTaskBtn) {
+        elements.sub2apiStopTaskBtn.addEventListener('click', handleStopSub2ApiSchedulerTask);
+    }
+    if (elements.sub2apiForceCheckBtn) {
+        elements.sub2apiForceCheckBtn.addEventListener('click', handleForceCheckSub2Api);
+    }
+
+    startSystemLogPolling();
 }
 
 // 加载可用的邮箱服务
@@ -228,6 +258,7 @@ async function loadAvailableServices() {
 
         // 更新邮箱服务选择框
         updateEmailServiceOptions();
+        populateSub2ApiSchedulerEmailServiceOptions();
 
         addLog('info', '[系统] 邮箱服务列表已加载');
     } catch (error) {
@@ -372,6 +403,181 @@ function updateEmailServiceOptions() {
 
         select.appendChild(optgroup);
     }
+}
+
+function populateSub2ApiSchedulerEmailServiceOptions(selectedValue = '') {
+    const select = elements.sub2apiSchedulerEmailService;
+    if (!select) return;
+
+    const preservedValue = selectedValue || select.value || 'tempmail:default';
+    select.innerHTML = '';
+
+    const appendGroup = (label, services, valueBuilder, textBuilder) => {
+        if (!services || services.length === 0) return;
+        const optgroup = document.createElement('optgroup');
+        optgroup.label = label;
+        services.forEach(service => {
+            const option = document.createElement('option');
+            option.value = valueBuilder(service);
+            option.textContent = textBuilder(service);
+            optgroup.appendChild(option);
+        });
+        select.appendChild(optgroup);
+    };
+
+    appendGroup('🌐 临时邮箱', availableServices.tempmail?.services || [], service => `tempmail:${service.id || 'default'}`, service => service.name);
+    appendGroup('📧 Outlook', availableServices.outlook?.services || [], service => `outlook:${service.id}`, service => service.name + (service.has_oauth ? ' (OAuth)' : ''));
+    appendGroup('🔗 自定义域名', availableServices.moe_mail?.services || [], service => `moe_mail:${service.id || 'default'}`, service => service.name + (service.default_domain ? ` (@${service.default_domain})` : ''));
+    appendGroup('📮 Temp-Mail 自部署', availableServices.temp_mail?.services || [], service => `temp_mail:${service.id}`, service => service.name + (service.domain ? ` (@${service.domain})` : ''));
+    appendGroup('🦆 DuckMail', availableServices.duck_mail?.services || [], service => `duck_mail:${service.id}`, service => service.name + (service.default_domain ? ` (@${service.default_domain})` : ''));
+    appendGroup('📧 Freemail', availableServices.freemail?.services || [], service => `freemail:${service.id}`, service => service.name + (service.domain ? ` (@${service.domain})` : ''));
+
+    if (!select.options.length) {
+        const option = document.createElement('option');
+        option.value = 'tempmail:default';
+        option.textContent = 'Tempmail.lol';
+        select.appendChild(option);
+    }
+
+    const hasPreservedOption = Array.from(select.options).some(option => option.value === preservedValue);
+    if (!hasPreservedOption && preservedValue) {
+        const option = document.createElement('option');
+        option.value = preservedValue;
+        option.textContent = `已保存服务 (${preservedValue})`;
+        select.appendChild(option);
+    }
+
+    select.value = preservedValue;
+}
+
+async function loadSub2ApiSchedulerConfig() {
+    if (!elements.sub2apiAutoCheckEnabled) return;
+
+    try {
+        const config = await api.get('/sub2api-scheduler/config');
+        elements.sub2apiAutoCheckEnabled.checked = !!config.check_enabled;
+        elements.sub2apiCheckInterval.value = config.check_interval ?? 60;
+        elements.sub2apiCheckSleep.value = config.check_sleep ?? 1;
+        elements.sub2apiAutoRegisterEnabled.checked = !!config.register_enabled;
+        elements.sub2apiRegisterThreshold.value = config.register_threshold ?? 10;
+        elements.sub2apiRegisterBatchCount.value = config.register_batch_count ?? 5;
+        populateSub2ApiSchedulerEmailServiceOptions(config.email_service || 'tempmail:default');
+        updateSub2ApiSchedulerBadge(!!config.check_enabled);
+    } catch (error) {
+        console.error('加载 Sub2API 调度配置失败', error);
+        addLog('warning', '[警告] 加载 Sub2API 自动维护配置失败');
+    }
+}
+
+async function handleSaveSub2ApiSchedulerConfig() {
+    elements.sub2apiSaveConfigBtn.disabled = true;
+    elements.sub2apiSaveConfigBtn.textContent = '保存中...';
+
+    try {
+        await api.post('/sub2api-scheduler/config', {
+            check_enabled: elements.sub2apiAutoCheckEnabled.checked,
+            check_interval: parseInt(elements.sub2apiCheckInterval.value) || 60,
+            check_sleep: parseInt(elements.sub2apiCheckSleep.value) || 0,
+            register_enabled: elements.sub2apiAutoRegisterEnabled.checked,
+            register_threshold: parseInt(elements.sub2apiRegisterThreshold.value) || 10,
+            register_batch_count: parseInt(elements.sub2apiRegisterBatchCount.value) || 5,
+            email_service: elements.sub2apiSchedulerEmailService ? elements.sub2apiSchedulerEmailService.value : 'tempmail:default',
+        });
+        updateSub2ApiSchedulerBadge(elements.sub2apiAutoCheckEnabled.checked);
+        toast.success('Sub2API 自动维护配置已保存');
+        addLog('success', '[系统] Sub2API 自动维护与补注册配置已保存');
+    } catch (error) {
+        toast.error(`保存失败: ${error.message}`);
+        addLog('error', `[错误] 保存 Sub2API 自动维护配置失败: ${error.message}`);
+    } finally {
+        elements.sub2apiSaveConfigBtn.disabled = false;
+        elements.sub2apiSaveConfigBtn.textContent = '保存并应用配置';
+    }
+}
+
+async function handleStopSub2ApiSchedulerTask() {
+    elements.sub2apiStopTaskBtn.disabled = true;
+    elements.sub2apiAutoCheckEnabled.checked = false;
+    elements.sub2apiAutoRegisterEnabled.checked = false;
+
+    try {
+        await api.post('/sub2api-scheduler/config', {
+            check_enabled: false,
+            check_interval: parseInt(elements.sub2apiCheckInterval.value) || 60,
+            check_sleep: parseInt(elements.sub2apiCheckSleep.value) || 0,
+            register_enabled: false,
+            register_threshold: parseInt(elements.sub2apiRegisterThreshold.value) || 10,
+            register_batch_count: parseInt(elements.sub2apiRegisterBatchCount.value) || 5,
+            email_service: elements.sub2apiSchedulerEmailService ? elements.sub2apiSchedulerEmailService.value : 'tempmail:default',
+        });
+        updateSub2ApiSchedulerBadge(false);
+        toast.info('已停止 Sub2API 自动任务');
+        addLog('warning', '[系统] 已手动停止 Sub2API 自动维护与补注册');
+    } catch (error) {
+        toast.error(`停止失败: ${error.message}`);
+        addLog('error', `[错误] 停止 Sub2API 自动任务失败: ${error.message}`);
+    } finally {
+        elements.sub2apiStopTaskBtn.disabled = false;
+    }
+}
+
+async function handleForceCheckSub2Api() {
+    elements.sub2apiForceCheckBtn.disabled = true;
+    addLog('info', '[系统] 正在触发 Sub2API 立即巡检...');
+
+    try {
+        const res = await api.post('/sub2api-scheduler/trigger');
+        if (Array.isArray(res.logs) && res.logs.length > 0) {
+            res.logs.forEach(message => {
+                let level = 'info';
+                if (message.includes('[WARNING]')) level = 'warning';
+                if (message.includes('[ERROR]')) level = 'error';
+                addLog(level, message);
+            });
+        }
+
+        if (res.success) {
+            toast.success(res.message || 'Sub2API 巡检执行完毕');
+        } else {
+            toast.error(res.message || 'Sub2API 巡检执行失败');
+        }
+    } catch (error) {
+        toast.error(`触发失败: ${error.message}`);
+        addLog('error', `[错误] 触发 Sub2API 巡检失败: ${error.message}`);
+    } finally {
+        elements.sub2apiForceCheckBtn.disabled = false;
+    }
+}
+
+function updateSub2ApiSchedulerBadge(isEnabled) {
+    const badge = elements.sub2apiSchedulerStatusBadge;
+    if (!badge) return;
+
+    if (isEnabled) {
+        badge.textContent = '已开启';
+        badge.style.backgroundColor = 'rgba(76, 175, 80, 0.1)';
+        badge.style.color = 'var(--success-color)';
+    } else {
+        badge.textContent = '未开启';
+        badge.style.backgroundColor = 'rgba(244, 67, 54, 0.1)';
+        badge.style.color = 'var(--error-color)';
+    }
+}
+
+function startSystemLogPolling() {
+    if (systemLogPollingInterval) return;
+
+    systemLogPollingInterval = setInterval(async () => {
+        try {
+            const res = await api.get(`/sub2api-scheduler/logs?since_id=${lastSystemLogId}`);
+            if (res && Array.isArray(res.logs) && res.logs.length > 0) {
+                res.logs.forEach(log => addLog(log.level || 'info', log.msg || ''));
+                lastSystemLogId = res.last_id;
+            }
+        } catch (error) {
+            console.error('轮询 Sub2API 系统日志失败', error);
+        }
+    }, 5000);
 }
 
 // 处理邮箱服务切换

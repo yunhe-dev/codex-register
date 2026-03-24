@@ -25,6 +25,7 @@ class SettingCategory(str, Enum):
     CUSTOM_DOMAIN = "moe_mail"
     SECURITY = "security"
     CPA = "cpa"
+    SUB2API = "sub2api"
 
 
 @dataclass
@@ -342,6 +343,48 @@ SETTING_DEFINITIONS: Dict[str, SettingDefinition] = {
         description="CPA API Token",
         is_secret=True
     ),
+    "sub2api_auto_check_enabled": SettingDefinition(
+        db_key="sub2api.auto_check_enabled",
+        default_value=False,
+        category=SettingCategory.SUB2API,
+        description="是否启用 Sub2API 自动维护"
+    ),
+    "sub2api_auto_check_interval": SettingDefinition(
+        db_key="sub2api.auto_check_interval",
+        default_value=60,
+        category=SettingCategory.SUB2API,
+        description="Sub2API 自动维护运行间隔（分钟）"
+    ),
+    "sub2api_auto_check_sleep_seconds": SettingDefinition(
+        db_key="sub2api.auto_check_sleep_seconds",
+        default_value=1,
+        category=SettingCategory.SUB2API,
+        description="Sub2API 单账号测活间隔（秒）"
+    ),
+    "sub2api_auto_register_enabled": SettingDefinition(
+        db_key="sub2api.auto_register_enabled",
+        default_value=False,
+        category=SettingCategory.SUB2API,
+        description="是否启用 Sub2API 自动补注册"
+    ),
+    "sub2api_auto_register_threshold": SettingDefinition(
+        db_key="sub2api.auto_register_threshold",
+        default_value=10,
+        category=SettingCategory.SUB2API,
+        description="Sub2API 自动补注册触发阈值"
+    ),
+    "sub2api_auto_register_batch_count": SettingDefinition(
+        db_key="sub2api.auto_register_batch_count",
+        default_value=5,
+        category=SettingCategory.SUB2API,
+        description="Sub2API 每次自动补注册数量"
+    ),
+    "sub2api_auto_register_email_service": SettingDefinition(
+        db_key="sub2api.auto_register_email_service",
+        default_value="tempmail:default",
+        category=SettingCategory.SUB2API,
+        description="Sub2API 自动补注册使用的邮箱服务"
+    ),
 
     # 验证码配置
     "email_code_timeout": SettingDefinition(
@@ -405,6 +448,12 @@ SETTING_TYPES: Dict[str, Type] = {
     "tempmail_max_retries": int,
     "tm_enabled": bool,
     "cpa_enabled": bool,
+    "sub2api_auto_check_enabled": bool,
+    "sub2api_auto_check_interval": int,
+    "sub2api_auto_check_sleep_seconds": int,
+    "sub2api_auto_register_enabled": bool,
+    "sub2api_auto_register_threshold": int,
+    "sub2api_auto_register_batch_count": int,
     "email_code_timeout": int,
     "email_code_poll_interval": int,
     "outlook_health_failure_threshold": int,
@@ -688,6 +737,13 @@ class Settings(BaseModel):
     cpa_enabled: bool = False
     cpa_api_url: str = ""
     cpa_api_token: SecretStr = SecretStr("")
+    sub2api_auto_check_enabled: bool = False
+    sub2api_auto_check_interval: int = 60
+    sub2api_auto_check_sleep_seconds: int = 1
+    sub2api_auto_register_enabled: bool = False
+    sub2api_auto_register_threshold: int = 10
+    sub2api_auto_register_batch_count: int = 5
+    sub2api_auto_register_email_service: str = "tempmail:default"
 
     # 验证码配置
     email_code_timeout: int = 120
