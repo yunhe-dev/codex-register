@@ -8,6 +8,7 @@ import uuid
 import random
 from datetime import datetime
 from typing import List, Optional, Dict, Tuple
+from curl_cffi import requests as cffi_requests
 
 from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
 from pydantic import BaseModel, Field
@@ -64,6 +65,37 @@ def update_proxy_usage(db, proxy_id: Optional[int]):
     """更新代理的使用时间"""
     if proxy_id:
         crud.update_proxy_last_used(db, proxy_id)
+
+
+def probe_task_exit_ip(proxy_url: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+    """
+    探测任务实际出口 IP，便于排查代理是否真正生效。
+
+    Returns:
+        (ip, error_message)
+    """
+    try:
+        request_kwargs = {
+            "timeout": 10,
+            "impersonate": "chrome110",
+        }
+        if proxy_url:
+            request_kwargs["proxies"] = {
+                "http": proxy_url,
+                "https": proxy_url,
+            }
+
+        response = cffi_requests.get(
+            "https://api.ipify.org?format=json",
+            **request_kwargs,
+        )
+        if response.status_code != 200:
+            return None, f"HTTP {response.status_code}"
+        payload = response.json()
+        ip = payload.get("ip") if isinstance(payload, dict) else None
+        return str(ip) if ip else None, None
+    except Exception as e:
+        return None, str(e)
 
 
 # ============== Pydantic Models ==============
@@ -390,13 +422,27 @@ def _run_sync_registration_task(task_uuid: str, email_service_type: str, proxy: 
                 else:
                     config = email_service_config or {}
 
+            # 创建注册引擎 - 使用 TaskManager 的日志回调
+            log_callback = task_manager.create_log_callback(task_uuid, prefix=log_prefix, batch_id=batch_id)
+
+            proxy_display = "直连" if not actual_proxy_url else actual_proxy_url[:80]
+            network_proxy_msg = f"[网络] 代理选择: proxy_id={proxy_id if proxy_id else 'none'} / {proxy_display}"
+            logger.info("任务 %s %s", task_uuid, network_proxy_msg)
+            log_callback(network_proxy_msg)
+            exit_ip, exit_ip_error = probe_task_exit_ip(actual_proxy_url)
+            if exit_ip:
+                network_ip_msg = f"[网络] 当前出口 IP: {exit_ip}"
+                logger.info("任务 %s %s", task_uuid, network_ip_msg)
+                log_callback(network_ip_msg)
+            elif exit_ip_error:
+                network_ip_error_msg = f"[网络] 当前出口 IP 探测失败: {exit_ip_error}"
+                logger.warning("任务 %s %s", task_uuid, network_ip_error_msg)
+                log_callback(network_ip_error_msg)
+
             email_service = EmailServiceFactory.create(service_type, config)
 
             # 在 WebSocket 状态里附带邮箱服务类型，前端可同步更新任务卡片
             task_manager.update_status(task_uuid, "running", email_service=service_type.value)
-
-            # 创建注册引擎 - 使用 TaskManager 的日志回调
-            log_callback = task_manager.create_log_callback(task_uuid, prefix=log_prefix, batch_id=batch_id)
 
             engine = LoginEngine(
                 email_service=email_service,
