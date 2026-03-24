@@ -108,6 +108,20 @@ const elements = {
     sub2apiSchedulerEmailService: document.getElementById('sub2api-scheduler-email-service'),
     sub2apiSaveConfigBtn: document.getElementById('sub2api-save-config-btn'),
     sub2apiStopTaskBtn: document.getElementById('sub2api-stop-task-btn'),
+    sub2apiLastScanTime: document.getElementById('sub2api-last-scan-time'),
+    sub2apiLastScanStatus: document.getElementById('sub2api-last-scan-status'),
+    sub2apiAccountsScanned: document.getElementById('sub2api-accounts-scanned'),
+    sub2apiAccountsHealthy: document.getElementById('sub2api-accounts-healthy'),
+    sub2apiAccountsRateLimited: document.getElementById('sub2api-accounts-rate-limited'),
+    sub2apiAccountsUnknown: document.getElementById('sub2api-accounts-unknown'),
+    sub2apiAccountsInvalid: document.getElementById('sub2api-accounts-invalid'),
+    sub2apiAccountsDeleted: document.getElementById('sub2api-accounts-deleted'),
+    sub2apiAvailableAccounts: document.getElementById('sub2api-available-accounts'),
+    sub2apiLastReplenishTime: document.getElementById('sub2api-last-replenish-time'),
+    sub2apiLastReplenishStatus: document.getElementById('sub2api-last-replenish-status'),
+    sub2apiReplenishCreatedCount: document.getElementById('sub2api-replenish-created-count'),
+    sub2apiReplenishSuccessCount: document.getElementById('sub2api-replenish-success-count'),
+    sub2apiReplenishTotalAfter: document.getElementById('sub2api-replenish-total-after'),
 };
 
 // 初始化
@@ -119,6 +133,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     ]);
     populateSub2ApiSchedulerEmailServiceOptions();
     await loadSub2ApiSchedulerConfig();
+    await loadSub2ApiSchedulerStatus();
     loadRecentAccounts();
     startAccountsPolling();
     initVisibilityReconnect();
@@ -469,6 +484,92 @@ async function loadSub2ApiSchedulerConfig() {
     }
 }
 
+function formatDateTime(value) {
+    if (!value) return '-';
+    const date = new Date(value.endsWith('Z') ? value : `${value}Z`);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleString('zh-CN', {
+        hour12: false,
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+    });
+}
+
+function updateSub2ApiSchedulerSummary(status) {
+    if (!status) return;
+    if (elements.sub2apiLastScanTime) {
+        elements.sub2apiLastScanTime.textContent = formatDateTime(status.last_scan_finished_at || status.last_scan_started_at);
+    }
+    if (elements.sub2apiLastScanStatus) {
+        const statusMap = {
+            idle: '待机',
+            running: '扫描中',
+            completed: '已完成',
+            failed: '失败',
+            cancelled: '已停止',
+        };
+        elements.sub2apiLastScanStatus.textContent = statusMap[status.last_scan_status] || status.last_scan_status || '-';
+    }
+    if (elements.sub2apiAccountsScanned) {
+        elements.sub2apiAccountsScanned.textContent = String(status.accounts_scanned ?? 0);
+    }
+    if (elements.sub2apiAccountsHealthy) {
+        elements.sub2apiAccountsHealthy.textContent = String(status.accounts_healthy ?? 0);
+    }
+    if (elements.sub2apiAccountsRateLimited) {
+        elements.sub2apiAccountsRateLimited.textContent = String(status.accounts_rate_limited ?? 0);
+    }
+    if (elements.sub2apiAccountsUnknown) {
+        elements.sub2apiAccountsUnknown.textContent = String(status.accounts_unknown ?? 0);
+    }
+    if (elements.sub2apiAccountsInvalid) {
+        elements.sub2apiAccountsInvalid.textContent = String(status.accounts_invalid ?? 0);
+    }
+    if (elements.sub2apiAccountsDeleted) {
+        elements.sub2apiAccountsDeleted.textContent = String(status.accounts_deleted ?? 0);
+    }
+    if (elements.sub2apiAvailableAccounts) {
+        elements.sub2apiAvailableAccounts.textContent = String(status.available_accounts ?? 0);
+    }
+    if (elements.sub2apiLastReplenishTime) {
+        elements.sub2apiLastReplenishTime.textContent = formatDateTime(status.last_replenish_finished_at || status.last_replenish_started_at);
+    }
+    if (elements.sub2apiLastReplenishStatus) {
+        const replenishStatusMap = {
+            idle: '待机',
+            running: '补货中',
+            completed: '已完成',
+            partial: '部分完成',
+            failed: '失败',
+        };
+        elements.sub2apiLastReplenishStatus.textContent =
+            replenishStatusMap[status.last_replenish_status] || status.last_replenish_status || '-';
+    }
+    if (elements.sub2apiReplenishCreatedCount) {
+        elements.sub2apiReplenishCreatedCount.textContent = String(status.last_replenish_created_count ?? 0);
+    }
+    if (elements.sub2apiReplenishSuccessCount) {
+        elements.sub2apiReplenishSuccessCount.textContent = String(status.last_replenish_success_count ?? 0);
+    }
+    if (elements.sub2apiReplenishTotalAfter) {
+        elements.sub2apiReplenishTotalAfter.textContent = String(status.last_replenish_total_after ?? 0);
+    }
+}
+
+async function loadSub2ApiSchedulerStatus() {
+    try {
+        const res = await api.get('/sub2api-scheduler/status');
+        if (res && res.success) {
+            updateSub2ApiSchedulerSummary(res.status);
+        }
+    } catch (error) {
+        console.error('加载 Sub2API 调度状态失败', error);
+    }
+}
+
 async function handleSaveSub2ApiSchedulerConfig() {
     elements.sub2apiSaveConfigBtn.disabled = true;
     elements.sub2apiSaveConfigBtn.textContent = '保存中...';
@@ -541,6 +642,7 @@ async function handleForceCheckSub2Api() {
         } else {
             toast.error(res.message || 'Sub2API 巡检执行失败');
         }
+        await loadSub2ApiSchedulerStatus();
     } catch (error) {
         toast.error(`触发失败: ${error.message}`);
         addLog('error', `[错误] 触发 Sub2API 巡检失败: ${error.message}`);
@@ -574,6 +676,7 @@ function startSystemLogPolling() {
                 res.logs.forEach(log => addLog(log.level || 'info', log.msg || ''));
                 lastSystemLogId = res.last_id;
             }
+            await loadSub2ApiSchedulerStatus();
         } catch (error) {
             console.error('轮询 Sub2API 系统日志失败', error);
         }

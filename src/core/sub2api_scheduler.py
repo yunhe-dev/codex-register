@@ -7,6 +7,7 @@ import logging
 import threading
 import uuid
 from collections import deque
+from datetime import datetime
 from typing import Optional, Tuple
 
 from ..config.settings import get_settings
@@ -28,7 +29,43 @@ _is_checking = False
 _scheduler_task: Optional[asyncio.Task] = None
 _auto_registering_services = set()
 _auto_registering_lock = threading.Lock()
+_scheduler_state_lock = threading.Lock()
 AUTO_REGISTER_MAX_ROUNDS = 5
+
+_scheduler_state = {
+    "is_running": False,
+    "last_scan_started_at": None,
+    "last_scan_finished_at": None,
+    "last_scan_status": "idle",
+    "last_error": "",
+    "services_total": 0,
+    "services_succeeded": 0,
+    "services_failed": 0,
+    "accounts_scanned": 0,
+    "accounts_healthy": 0,
+    "accounts_rate_limited": 0,
+    "accounts_unknown": 0,
+    "accounts_invalid": 0,
+    "accounts_deleted": 0,
+    "accounts_delete_failed": 0,
+    "available_accounts": 0,
+    "last_replenish_started_at": None,
+    "last_replenish_finished_at": None,
+    "last_replenish_status": "idle",
+    "last_replenish_created_count": 0,
+    "last_replenish_success_count": 0,
+    "last_replenish_total_after": 0,
+}
+
+
+def _update_scheduler_state(**kwargs):
+    with _scheduler_state_lock:
+        _scheduler_state.update(kwargs)
+
+
+def get_scheduler_status_snapshot():
+    with _scheduler_state_lock:
+        return dict(_scheduler_state)
 
 
 def append_system_log(level: str, msg: str):
@@ -71,7 +108,7 @@ def _resolve_auto_register_email_service() -> Tuple[str, Optional[int]]:
     return "tempmail", None
 
 
-async def trigger_auto_registration(count: int, sub2api_service_id: int):
+async def trigger_auto_registration(count: int, sub2api_service_id: int, current_available_count: int = 0):
     logger.info("触发 Sub2API 自动补注册: count=%s service_id=%s", count, sub2api_service_id)
     if count <= 0:
         return
@@ -88,7 +125,17 @@ async def trigger_auto_registration(count: int, sub2api_service_id: int):
         target_success_count = count
         remaining_to_create = count
         total_success_count = 0
+        total_created_count = 0
         round_index = 0
+
+        _update_scheduler_state(
+            last_replenish_started_at=datetime.utcnow().isoformat(),
+            last_replenish_finished_at=None,
+            last_replenish_status="running",
+            last_replenish_created_count=0,
+            last_replenish_success_count=0,
+            last_replenish_total_after=current_available_count,
+        )
 
         append_system_log(
             "info",
@@ -99,6 +146,11 @@ async def trigger_auto_registration(count: int, sub2api_service_id: int):
             round_index += 1
             task_uuids = [str(uuid.uuid4()) for _ in range(remaining_to_create)]
             batch_id = str(uuid.uuid4())
+            total_created_count += len(task_uuids)
+            _update_scheduler_state(
+                last_replenish_created_count=total_created_count,
+                last_replenish_success_count=total_success_count,
+            )
 
             with get_db() as db:
                 for task_uuid in task_uuids:
@@ -143,6 +195,11 @@ async def trigger_auto_registration(count: int, sub2api_service_id: int):
 
             total_success_count += round_success_count
             remaining_to_create = max(0, target_success_count - total_success_count)
+            _update_scheduler_state(
+                last_replenish_created_count=total_created_count,
+                last_replenish_success_count=total_success_count,
+                last_replenish_total_after=current_available_count + total_success_count,
+            )
 
             append_system_log(
                 "info",
@@ -157,11 +214,25 @@ async def trigger_auto_registration(count: int, sub2api_service_id: int):
                 break
 
         if remaining_to_create == 0:
+            _update_scheduler_state(
+                last_replenish_finished_at=datetime.utcnow().isoformat(),
+                last_replenish_status="completed",
+                last_replenish_created_count=total_created_count,
+                last_replenish_success_count=total_success_count,
+                last_replenish_total_after=current_available_count + total_success_count,
+            )
             append_system_log(
                 "info",
                 f"服务 {sub2api_service_id} 自动补注册完成，已按成功数补齐 {target_success_count} 个账号",
             )
         else:
+            _update_scheduler_state(
+                last_replenish_finished_at=datetime.utcnow().isoformat(),
+                last_replenish_status="partial",
+                last_replenish_created_count=total_created_count,
+                last_replenish_success_count=total_success_count,
+                last_replenish_total_after=current_available_count + total_success_count,
+            )
             append_system_log(
                 "warning",
                 f"服务 {sub2api_service_id} 自动补注册结束，目标 {target_success_count}，实际成功 {total_success_count}，剩余缺口 {remaining_to_create}",
@@ -184,26 +255,62 @@ def check_sub2api_services_job(main_loop, manual_logs: list = None):
         return
 
     _is_checking = True
+    _update_scheduler_state(
+        is_running=True,
+        last_scan_started_at=datetime.utcnow().isoformat(),
+        last_scan_status="running",
+        last_error="",
+        services_total=0,
+        services_succeeded=0,
+        services_failed=0,
+        accounts_scanned=0,
+        accounts_healthy=0,
+        accounts_rate_limited=0,
+        accounts_unknown=0,
+        accounts_invalid=0,
+        accounts_deleted=0,
+        accounts_delete_failed=0,
+        available_accounts=0,
+    )
     _log("info", "开始检查 Sub2API 服务...", manual_logs)
 
     try:
         with get_db() as db:
             services = crud.get_sub2api_services(db, enabled=True)
+        _update_scheduler_state(services_total=len(services))
 
         if not services:
             _log("warning", "当前没有任何启用的 Sub2API 服务。", manual_logs)
+            _update_scheduler_state(
+                is_running=False,
+                last_scan_finished_at=datetime.utcnow().isoformat(),
+                last_scan_status="completed",
+            )
             return
 
         for svc in services:
             valid_count = 0
+            healthy_count = 0
+            rate_limited_count = 0
+            unknown_count = 0
+            invalid_count = 0
+            deleted_count = 0
+            delete_failed_count = 0
+            scanned_count = 0
             try:
                 _log("info", f"检查 Sub2API 服务: {svc.name}", manual_logs)
                 accounts = list_sub2api_openai_accounts(svc.api_url, svc.api_key)
                 _log("info", f"服务 {svc.name} 获取到 {len(accounts)} 个 openai 账号", manual_logs)
+                scanned_count = len(accounts)
 
                 for index, account in enumerate(accounts, start=1):
                     if manual_logs is None and not get_settings().sub2api_auto_check_enabled:
                         _log("warning", "检测到自动维护已关闭，当前巡检提前结束。", manual_logs)
+                        _update_scheduler_state(
+                            is_running=False,
+                            last_scan_finished_at=datetime.utcnow().isoformat(),
+                            last_scan_status="cancelled",
+                        )
                         return
 
                     account_id = account.get("id")
@@ -215,17 +322,26 @@ def check_sub2api_services_job(main_loop, manual_logs: list = None):
                     result, message = test_sub2api_account(svc.api_url, svc.api_key, int(account_id))
                     if result is True:
                         valid_count += 1
+                        healthy_count += 1
                         _log("info", f"测活进度 [{index}/{len(accounts)}] {account_name} 正常", manual_logs)
                     elif result is False:
+                        invalid_count += 1
                         _log("warning", f"测活进度 [{index}/{len(accounts)}] {account_name} 失效: {message}", manual_logs)
                         deleted, delete_message = delete_sub2api_account(svc.api_url, svc.api_key, int(account_id))
                         if deleted:
+                            deleted_count += 1
                             _log("warning", f"已删除失效账号 {account_name}: {delete_message}", manual_logs)
                         else:
+                            delete_failed_count += 1
                             _log("error", f"删除失效账号 {account_name} 失败: {delete_message}", manual_logs)
                     else:
                         valid_count += 1
-                        _log("warning", f"账号 {account_name} 无法判定健康状态，已跳过删除: {message}", manual_logs)
+                        if str(message or "").startswith("限流中"):
+                            rate_limited_count += 1
+                            _log("warning", f"账号 {account_name} 限流中，暂时保留: {message}", manual_logs)
+                        else:
+                            unknown_count += 1
+                            _log("warning", f"账号 {account_name} 无法判定健康状态，已跳过删除: {message}", manual_logs)
 
                     sleep_seconds = max(0, int(get_settings().sub2api_auto_check_sleep_seconds or 0))
                     if sleep_seconds > 0 and index < len(accounts):
@@ -233,10 +349,27 @@ def check_sub2api_services_job(main_loop, manual_logs: list = None):
                         time.sleep(sleep_seconds)
 
                 _log("info", f"服务 {svc.name} 检查完成，有效账号数: {valid_count}", manual_logs)
+                snapshot = get_scheduler_status_snapshot()
+                _update_scheduler_state(
+                    services_succeeded=snapshot["services_succeeded"] + 1,
+                    accounts_scanned=snapshot["accounts_scanned"] + scanned_count,
+                    accounts_healthy=snapshot["accounts_healthy"] + healthy_count,
+                    accounts_rate_limited=snapshot["accounts_rate_limited"] + rate_limited_count,
+                    accounts_unknown=snapshot["accounts_unknown"] + unknown_count,
+                    accounts_invalid=snapshot["accounts_invalid"] + invalid_count,
+                    accounts_deleted=snapshot["accounts_deleted"] + deleted_count,
+                    accounts_delete_failed=snapshot["accounts_delete_failed"] + delete_failed_count,
+                    available_accounts=snapshot["available_accounts"] + valid_count,
+                )
             except Exception as exc:
                 valid_count = 0
                 _log("error", f"检查服务 {svc.name} 时异常: {exc}", manual_logs)
                 _log("warning", f"为保证供应，暂按服务 {svc.name} 有效账号数为 0 处理", manual_logs)
+                snapshot = get_scheduler_status_snapshot()
+                _update_scheduler_state(
+                    services_failed=snapshot["services_failed"] + 1,
+                    last_error=str(exc),
+                )
 
             if settings.sub2api_auto_register_enabled and valid_count < settings.sub2api_auto_register_threshold:
                 threshold = int(settings.sub2api_auto_register_threshold or 0)
@@ -249,7 +382,7 @@ def check_sub2api_services_job(main_loop, manual_logs: list = None):
                 if to_register > 0 and main_loop:
                     try:
                         asyncio.run_coroutine_threadsafe(
-                            trigger_auto_registration(to_register, svc.id),
+                            trigger_auto_registration(to_register, svc.id, valid_count),
                             main_loop,
                         )
                         _log("info", f"已为服务 {svc.name} 提交自动补注册任务", manual_logs)
@@ -257,6 +390,19 @@ def check_sub2api_services_job(main_loop, manual_logs: list = None):
                         _log("error", f"提交自动补注册失败: {exc}", manual_logs)
                 elif to_register > 0:
                     _log("error", "缺少可用事件循环，无法提交自动补注册任务", manual_logs)
+        _update_scheduler_state(
+            is_running=False,
+            last_scan_finished_at=datetime.utcnow().isoformat(),
+            last_scan_status="completed",
+        )
+    except Exception as exc:
+        _update_scheduler_state(
+            is_running=False,
+            last_scan_finished_at=datetime.utcnow().isoformat(),
+            last_scan_status="failed",
+            last_error=str(exc),
+        )
+        raise
     finally:
         _is_checking = False
 

@@ -48,6 +48,13 @@ async def get_sub2api_system_logs(since_id: int = 0):
     return {"success": True, "logs": logs, "last_id": last_id}
 
 
+@router.get("/status")
+async def get_sub2api_scheduler_status():
+    from ...core.sub2api_scheduler import get_scheduler_status_snapshot
+
+    return {"success": True, "status": get_scheduler_status_snapshot()}
+
+
 @router.post("/config")
 async def update_sub2api_scheduler_config(request: Sub2ApiSchedulerConfig, background_tasks: BackgroundTasks):
     update_settings(

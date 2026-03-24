@@ -562,6 +562,145 @@ body {
 }
 
 /* ============================================
+   扫描摘要卡
+   ============================================ */
+
+.summary-strip {
+    padding: 14px 16px 12px;
+    border-bottom: 1px solid var(--border-light);
+    background:
+        radial-gradient(circle at top right, rgba(16, 163, 127, 0.08), transparent 36%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent);
+}
+
+.summary-strip-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.summary-strip-title {
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.summary-strip-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+    margin-top: 4px;
+    font-size: 0.76rem;
+    color: var(--text-secondary);
+}
+
+.summary-strip-meta strong {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.summary-table-wrap {
+    overflow-x: auto;
+    padding-bottom: 2px;
+}
+
+.summary-table {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(84px, 1fr));
+    gap: 0;
+    min-width: 640px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+}
+
+.summary-table-cell {
+    position: relative;
+    padding: 12px 10px 10px;
+    text-align: center;
+    background: var(--surface);
+    border-right: 1px solid var(--border-light);
+}
+
+.summary-table-cell:last-child {
+    border-right: none;
+}
+
+.summary-table-cell::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--secondary-color);
+}
+
+.summary-table-cell.is-total::before {
+    background: #cbd5e1;
+}
+
+.summary-table-cell.is-active::before {
+    background: var(--primary-color);
+}
+
+.summary-table-cell.is-healthy::before {
+    background: var(--success-color);
+}
+
+.summary-table-cell.is-rate-limited::before {
+    background: var(--warning-color);
+}
+
+.summary-table-cell.is-review::before {
+    background: var(--info-color);
+}
+
+.summary-table-cell.is-invalid::before,
+.summary-table-cell.is-deleted::before {
+    background: var(--danger-color);
+}
+
+.summary-table-value {
+    margin-top: 6px;
+    font-size: 1.7rem;
+    line-height: 1.05;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    color: var(--text-primary);
+}
+
+.summary-table-cell.is-active .summary-table-value,
+.summary-table-cell.is-healthy .summary-table-value {
+    color: var(--success-color);
+}
+
+.summary-table-cell.is-rate-limited .summary-table-value {
+    color: var(--warning-color);
+}
+
+.summary-table-cell.is-review .summary-table-value {
+    color: var(--info-color);
+}
+
+.summary-table-cell.is-invalid .summary-table-value,
+.summary-table-cell.is-deleted .summary-table-value {
+    color: var(--danger-color);
+}
+
+.summary-table-label {
+    margin-top: 8px;
+    font-size: 0.74rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+/* ============================================
    状态徽章
    ============================================ */
 

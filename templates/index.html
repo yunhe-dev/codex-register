@@ -373,6 +373,76 @@
                             </div>
                         </div>
                         <div class="card-body" style="padding: 0;">
+                            <div id="sub2api-scheduler-summary" class="summary-strip">
+                                <div class="summary-strip-header">
+                                    <div>
+                                        <div class="summary-strip-title">最近一次扫描摘要</div>
+                                        <div class="summary-strip-meta">
+                                            <span>上次扫描：<strong id="sub2api-last-scan-time">-</strong></span>
+                                            <span>运行状态：<strong id="sub2api-last-scan-status">-</strong></span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="summary-table-wrap">
+                                    <div class="summary-table">
+                                        <div class="summary-table-cell is-total">
+                                            <div class="summary-table-value" id="sub2api-accounts-scanned">0</div>
+                                            <div class="summary-table-label">已扫描</div>
+                                        </div>
+                                        <div class="summary-table-cell is-active">
+                                            <div class="summary-table-value" id="sub2api-available-accounts">0</div>
+                                            <div class="summary-table-label">可用</div>
+                                        </div>
+                                        <div class="summary-table-cell is-healthy">
+                                            <div class="summary-table-value" id="sub2api-accounts-healthy">0</div>
+                                            <div class="summary-table-label">健康</div>
+                                        </div>
+                                        <div class="summary-table-cell is-rate-limited">
+                                            <div class="summary-table-value" id="sub2api-accounts-rate-limited">0</div>
+                                            <div class="summary-table-label">限流中</div>
+                                        </div>
+                                        <div class="summary-table-cell is-review">
+                                            <div class="summary-table-value" id="sub2api-accounts-unknown">0</div>
+                                            <div class="summary-table-label">待确认</div>
+                                        </div>
+                                        <div class="summary-table-cell is-invalid">
+                                            <div class="summary-table-value" id="sub2api-accounts-invalid">0</div>
+                                            <div class="summary-table-label">失效</div>
+                                        </div>
+                                        <div class="summary-table-cell is-deleted">
+                                            <div class="summary-table-value" id="sub2api-accounts-deleted">0</div>
+                                            <div class="summary-table-label">已删除</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="sub2api-replenish-summary" class="summary-strip" style="border-top: 1px solid var(--border-light);">
+                                <div class="summary-strip-header">
+                                    <div>
+                                        <div class="summary-strip-title">最近一次补货摘要</div>
+                                        <div class="summary-strip-meta">
+                                            <span>补货时间：<strong id="sub2api-last-replenish-time">-</strong></span>
+                                            <span>补货状态：<strong id="sub2api-last-replenish-status">-</strong></span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="summary-table-wrap">
+                                    <div class="summary-table" style="grid-template-columns: repeat(3, minmax(120px, 1fr)); min-width: 420px;">
+                                        <div class="summary-table-cell is-total">
+                                            <div class="summary-table-value" id="sub2api-replenish-created-count">0</div>
+                                            <div class="summary-table-label">创建账号数量</div>
+                                        </div>
+                                        <div class="summary-table-cell is-healthy">
+                                            <div class="summary-table-value" id="sub2api-replenish-success-count">0</div>
+                                            <div class="summary-table-label">成功注册数量</div>
+                                        </div>
+                                        <div class="summary-table-cell is-active">
+                                            <div class="summary-table-value" id="sub2api-replenish-total-after">0</div>
+                                            <div class="summary-table-label">补货后总数量</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                             <!-- 任务状态行 -->
                             <div class="task-status-row" id="task-status-row" style="display: none;">
                                 <div class="task-status-item">
