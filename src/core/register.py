@@ -12,7 +12,6 @@ import string
 from typing import Optional, Dict, Any, Tuple, Callable
 from dataclasses import dataclass
 from datetime import datetime
-
 from curl_cffi import requests as cffi_requests
 
 from .openai.oauth import OAuthManager, OAuthStart
@@ -156,9 +155,9 @@ class RegistrationEngine:
                 logger.warning(f"记录任务日志失败: {e}")
 
         # 根据级别记录到日志系统
-        if level == "error":
+        if level == 'error':
             logger.error(message)
-        elif level == "warning":
+        elif level == 'warning':
             logger.warning(message)
         else:
             logger.info(message)
@@ -172,7 +171,7 @@ class RegistrationEngine:
         try:
             return self.http_client.check_ip_location()
         except Exception as e:
-            self._log(f"检查 IP 地理位置失败: {e}", "error")
+            self._log(f"检查 IP 地理位置失败: {e}", 'error')
             return False, None
 
     def _create_email(self) -> bool:
@@ -182,7 +181,7 @@ class RegistrationEngine:
             self.email_info = self.email_service.create_email()
 
             if not self.email_info or "email" not in self.email_info:
-                self._log("创建邮箱失败: 返回信息不完整", "error")
+                self._log("创建邮箱失败: 返回信息不完整", 'error')
                 return False
 
             self.email = self.email_info["email"]
@@ -190,7 +189,7 @@ class RegistrationEngine:
             return True
 
         except Exception as e:
-            self._log(f"创建邮箱失败: {e}", "error")
+            self._log(f"创建邮箱失败: {e}", 'error')
             return False
 
     def _start_oauth(self) -> bool:
@@ -201,7 +200,7 @@ class RegistrationEngine:
             self._log(f"OAuth URL 已生成: {self.oauth_start.auth_url[:80]}...")
             return True
         except Exception as e:
-            self._log(f"生成 OAuth URL 失败: {e}", "error")
+            self._log(f"生成 OAuth URL 失败: {e}", 'error')
             return False
 
     def _init_session(self) -> bool:
@@ -210,8 +209,30 @@ class RegistrationEngine:
             self.session = self.http_client.session
             return True
         except Exception as e:
-            self._log(f"初始化会话失败: {e}", "error")
+            self._log(f"初始化会话失败: {e}", 'error')
             return False
+
+    def close(self):
+        """关闭注册流程占用的资源"""
+        if self.session:
+            try:
+                self.session.close()
+            except Exception as e:
+                self._log(f"关闭注册会话失败: {e}", "warning")
+            finally:
+                self.session = None
+
+        try:
+            self.http_client.close()
+        except Exception as e:
+            self._log(f"关闭 HTTP 客户端失败: {e}", "warning")
+
+        close_email_service = getattr(self.email_service, "close", None)
+        if callable(close_email_service):
+            try:
+                close_email_service()
+            except Exception as e:
+                self._log(f"关闭邮箱服务失败: {e}", "warning")
 
     def _get_device_id(self) -> Optional[str]:
         """获取 Device ID"""
@@ -236,12 +257,12 @@ class RegistrationEngine:
 
                 self._log(
                     f"获取 Device ID 失败: 未返回 oai-did Cookie (HTTP {response.status_code}, 第 {attempt}/{max_attempts} 次)",
-                    "warning" if attempt < max_attempts else "error"
+                    'warning' if attempt < max_attempts else 'error'
                 )
             except Exception as e:
                 self._log(
                     f"获取 Device ID 失败: {e} (第 {attempt}/{max_attempts} 次)",
-                    "warning" if attempt < max_attempts else "error"
+                    'warning' if attempt < max_attempts else 'error'
                 )
 
             if attempt < max_attempts:
@@ -271,11 +292,11 @@ class RegistrationEngine:
                 self._log(f"Sentinel token 获取成功")
                 return sen_token
             else:
-                self._log(f"Sentinel 检查失败: {response.status_code}", "warning")
+                self._log(f"Sentinel 检查失败: {response.status_code}", 'warning')
                 return None
 
         except Exception as e:
-            self._log(f"Sentinel 检查异常: {e}", "warning")
+            self._log(f"Sentinel 检查异常: {e}", 'warning')
             return None
 
     def _submit_signup_form(self, did: str, sen_token: Optional[str]) -> SignupFormResult:
@@ -287,6 +308,7 @@ class RegistrationEngine:
         """
         try:
             signup_body = f'{{"username":{{"value":"{self.email}","kind":"email"}},"screen_hint":"signup"}}'
+            #signup_body = f'{{"username":{{"value":"{self.email}","kind":"email"}},"screen_hint":"login_or_signup"}}'
 
             headers = {
                 "referer": "https://auth.openai.com/create-account",
@@ -319,7 +341,7 @@ class RegistrationEngine:
                 self._log(f"响应页面类型: {page_type}")
 
                 # 判断是否为已注册账号
-                is_existing = page_type == OPENAI_PAGE_TYPES["EMAIL_OTP_VERIFICATION"]
+                is_existing = page_type != OPENAI_PAGE_TYPES["PASSWORD_REGISTRATION"]
 
                 if is_existing:
                     self._log(f"检测到已注册账号，将自动切换到登录流程")
@@ -333,12 +355,12 @@ class RegistrationEngine:
                 )
 
             except Exception as parse_error:
-                self._log(f"解析响应失败: {parse_error}", "warning")
+                self._log(f"解析响应失败: {parse_error}", 'warning')
                 # 无法解析，默认成功
                 return SignupFormResult(success=True)
 
         except Exception as e:
-            self._log(f"提交注册表单失败: {e}", "error")
+            self._log(f"提交注册表单失败: {e}", 'error')
             return SignupFormResult(success=False, error_message=str(e))
 
     def _register_password(self) -> Tuple[bool, Optional[str]]:
@@ -368,18 +390,17 @@ class RegistrationEngine:
             self._log(f"提交密码状态: {response.status_code}")
 
             if response.status_code != 200:
-                error_text = response.text[:500]
-                self._log(f"密码注册失败: {error_text}", "warning")
+                self._log(f"密码注册失败: {response.json().get('error', {}).get('message', '')}", 'warning')
 
                 # 解析错误信息，判断是否是邮箱已注册
                 try:
                     error_json = response.json()
-                    error_msg = error_json.get("error", {}).get("message", "")
-                    error_code = error_json.get("error", {}).get("code", "")
+                    error_msg = error_json.get('error', {}).get('message', "")
+                    error_code = error_json.get('error', {}).get('code', "")
 
                     # 检测邮箱已注册的情况
-                    if "already" in error_msg.lower() or "exists" in error_msg.lower() or error_code == "user_exists":
-                        self._log(f"邮箱 {self.email} 可能已在 OpenAI 注册过", "error")
+                    if "already" in error_msg.lower() or "exists" in error_msg.lower() or "again" in error_msg.lower() or error_code == "user_exists" or error_code == "invalid_request":
+                        self._log(f"邮箱 {self.email} 可能已在 OpenAI 注册过", 'error')
                         # 标记此邮箱为已注册状态
                         self._mark_email_as_registered()
                 except Exception:
@@ -390,27 +411,38 @@ class RegistrationEngine:
             return True, password
 
         except Exception as e:
-            self._log(f"密码注册失败: {e}", "error")
+            self._log(f"密码注册失败: {e}", 'error')
             return False, None
 
+
+
     def _mark_email_as_registered(self):
-        """标记邮箱为已注册状态（用于防止重复尝试）"""
+        """标记邮箱为已注册状态（OpenAI 侧已存在该账号）"""
         try:
             with get_db() as db:
-                # 检查是否已存在该邮箱的记录
                 existing = crud.get_account_by_email(db, self.email)
-                if not existing:
-                    # 创建一个失败记录，标记该邮箱已注册过
+                if existing:
+                    # 数据库中已有该账号，更新 extra_data 标记
+                    extra = existing.extra_data or {}
+                    extra["openai_already_registered"] = True
+                    crud.update_account(
+                        db,
+                        existing.id,
+                        extra_data=extra
+                    )
+                    self._log(f"已更新数据库中 {self.email} 的已注册标记")
+                else:
+                    # 数据库中不存在，创建失败记录并标记
                     crud.create_account(
                         db,
                         email=self.email,
-                        password="",  # 空密码表示未成功注册
+                        password="",
                         email_service=self.email_service.service_type.value,
                         email_service_id=self.email_info.get("service_id") if self.email_info else None,
                         status="failed",
-                        extra_data={"register_failed_reason": "email_already_registered_on_openai"}
+                        extra_data={"openai_already_registered": True}
                     )
-                    self._log(f"已在数据库中标记邮箱 {self.email} 为已注册状态")
+                    self._log(f"已在数据库中标记 {self.email} 为已注册状态")
         except Exception as e:
             logger.warning(f"标记邮箱状态失败: {e}")
 
@@ -432,7 +464,7 @@ class RegistrationEngine:
             return response.status_code == 200
 
         except Exception as e:
-            self._log(f"发送验证码失败: {e}", "error")
+            self._log(f"发送验证码失败: {e}", 'error')
             return False
 
     def _get_verification_code(self) -> Optional[str]:
@@ -453,11 +485,11 @@ class RegistrationEngine:
                 self._log(f"成功获取验证码: {code}")
                 return code
             else:
-                self._log("等待验证码超时", "error")
+                self._log("等待验证码超时", 'error')
                 return None
 
         except Exception as e:
-            self._log(f"获取验证码失败: {e}", "error")
+            self._log(f"获取验证码失败: {e}", 'error')
             return None
 
     def _validate_verification_code(self, code: str) -> bool:
@@ -519,13 +551,13 @@ class RegistrationEngine:
             self._log(f"账户创建状态: {response.status_code}")
 
             if response.status_code != 200:
-                self._log(f"账户创建失败: {response.text[:200]}", "warning")
+                self._log(f"账户创建失败: {response.text[:200]}", 'warning')
                 return False
 
             return True
 
         except Exception as e:
-            self._log(f"创建账户失败: {e}", "error")
+            self._log(f"创建账户失败: {e}", 'error')
             return False
 
     def _reset_session_for_login_fallback(self) -> bool:
@@ -1047,5 +1079,5 @@ class RegistrationEngine:
                 return True
 
         except Exception as e:
-            self._log(f"保存到数据库失败: {e}", "error")
+            self._log(f"保存到数据库失败: {e}", 'error')
             return False

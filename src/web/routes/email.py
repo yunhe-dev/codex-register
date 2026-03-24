@@ -67,7 +67,7 @@ class ServiceTestResult(BaseModel):
 
 class OutlookBatchImportRequest(BaseModel):
     """Outlook 批量导入请求"""
-    data: str  # 多行数据，每行格式: 邮箱----密码 或 邮箱----密码----client_id----refresh_token
+    data: str  # 多行数据，每行格式: 邮箱----密码----client_id----refresh_token
     enabled: bool = True
     priority: int = 0
 
@@ -84,7 +84,7 @@ class OutlookBatchImportResponse(BaseModel):
 # ============== Helper Functions ==============
 
 # 敏感字段列表，返回响应时需要过滤
-SENSITIVE_FIELDS = {'password', 'api_key', 'refresh_token', 'access_token'}
+SENSITIVE_FIELDS = {'password', 'api_key', 'refresh_token', 'access_token', 'admin_token'}
 
 def filter_sensitive_config(config: Dict[str, Any]) -> Dict[str, Any]:
     """过滤敏感配置信息"""
@@ -144,6 +144,9 @@ async def get_email_services_stats():
             'outlook_count': 0,
             'custom_count': 0,
             'temp_mail_count': 0,
+            'duck_mail_count': 0,
+            'freemail_count': 0,
+            'imap_mail_count': 0,
             'tempmail_available': True,  # 临时邮箱始终可用
             'enabled_count': enabled_count
         }
@@ -151,10 +154,16 @@ async def get_email_services_stats():
         for service_type, count in type_stats:
             if service_type == 'outlook':
                 stats['outlook_count'] = count
-            elif service_type == 'custom_domain':
+            elif service_type == 'moe_mail':
                 stats['custom_count'] = count
             elif service_type == 'temp_mail':
                 stats['temp_mail_count'] = count
+            elif service_type == 'duck_mail':
+                stats['duck_mail_count'] = count
+            elif service_type == 'freemail':
+                stats['freemail_count'] = count
+            elif service_type == 'imap_mail':
+                stats['imap_mail_count'] = count
 
         return stats
 
@@ -185,8 +194,8 @@ async def get_service_types():
                 ]
             },
             {
-                "value": "custom_domain",
-                "label": "自定义域名",
+                "value": "moe_mail",
+                "label": "MoeMail",
                 "description": "自定义域名邮箱服务",
                 "config_fields": [
                     {"name": "base_url", "label": "API 地址", "required": True},
@@ -203,6 +212,39 @@ async def get_service_types():
                     {"name": "admin_password", "label": "Admin 密码", "required": True, "secret": True},
                     {"name": "domain", "label": "邮箱域名", "required": True, "placeholder": "example.com"},
                     {"name": "enable_prefix", "label": "启用前缀", "required": False, "default": True},
+                ]
+            },
+            {
+                "value": "duck_mail",
+                "label": "DuckMail",
+                "description": "DuckMail 接口邮箱服务，支持 API Key 私有域名访问",
+                "config_fields": [
+                    {"name": "base_url", "label": "API 地址", "required": True, "placeholder": "https://api.duckmail.sbs"},
+                    {"name": "default_domain", "label": "默认域名", "required": True, "placeholder": "duckmail.sbs"},
+                    {"name": "api_key", "label": "API Key", "required": False, "secret": True},
+                    {"name": "password_length", "label": "随机密码长度", "required": False, "default": 12},
+                ]
+            },
+            {
+                "value": "freemail",
+                "label": "Freemail",
+                "description": "Freemail 自部署 Cloudflare Worker 临时邮箱服务",
+                "config_fields": [
+                    {"name": "base_url", "label": "API 地址", "required": True, "placeholder": "https://freemail.example.com"},
+                    {"name": "admin_token", "label": "Admin Token", "required": True, "secret": True},
+                    {"name": "domain", "label": "邮箱域名", "required": False, "placeholder": "example.com"},
+                ]
+            },
+            {
+                "value": "imap_mail",
+                "label": "IMAP 邮箱",
+                "description": "标准 IMAP 协议邮箱（Gmail/QQ/163等），仅用于接收验证码，强制直连",
+                "config_fields": [
+                    {"name": "host", "label": "IMAP 服务器", "required": True, "placeholder": "imap.gmail.com"},
+                    {"name": "port", "label": "端口", "required": False, "default": 993},
+                    {"name": "use_ssl", "label": "使用 SSL", "required": False, "default": True},
+                    {"name": "email", "label": "邮箱地址", "required": True},
+                    {"name": "password", "label": "密码/授权码", "required": True, "secret": True},
                 ]
             }
         ]
@@ -419,11 +461,8 @@ async def batch_import_outlook(request: OutlookBatchImportRequest):
     """
     批量导入 Outlook 邮箱账户
 
-    支持两种格式：
-    - 格式一（密码认证）：邮箱----密码
-    - 格式二（XOAUTH2 认证）：邮箱----密码----client_id----refresh_token
-
-    每行一个账户，使用四个连字符（----）分隔字段
+    格式（每行）：邮箱----密码----client_id----refresh_token
+    使用四个连字符（----）分隔字段
     """
     lines = request.data.strip().split("\n")
     total = len(lines)
@@ -442,19 +481,29 @@ async def batch_import_outlook(request: OutlookBatchImportRequest):
 
             parts = line.split("----")
 
-            # 验证格式
-            if len(parts) < 2:
+            # 必须是四字段格式
+            if len(parts) < 4:
                 failed += 1
-                errors.append(f"行 {i+1}: 格式错误，至少需要邮箱和密码")
+                errors.append(
+                    f"行 {i+1}: 格式错误，必须为 邮箱----密码----client_id----refresh_token"
+                )
                 continue
 
             email = parts[0].strip()
             password = parts[1].strip()
+            client_id = parts[2].strip()
+            refresh_token = parts[3].strip()
 
             # 验证邮箱格式
             if "@" not in email:
                 failed += 1
                 errors.append(f"行 {i+1}: 无效的邮箱地址: {email}")
+                continue
+
+            # 验证 OAuth 字段非空
+            if not client_id or not refresh_token:
+                failed += 1
+                errors.append(f"行 {i+1}: [{email}] client_id 或 refresh_token 不能为空")
                 continue
 
             # 检查是否已存在
@@ -471,16 +520,10 @@ async def batch_import_outlook(request: OutlookBatchImportRequest):
             # 构建配置
             config = {
                 "email": email,
-                "password": password
+                "password": password,
+                "client_id": client_id,
+                "refresh_token": refresh_token,
             }
-
-            # 检查是否有 OAuth 信息（格式二）
-            if len(parts) >= 4:
-                client_id = parts[2].strip()
-                refresh_token = parts[3].strip()
-                if client_id and refresh_token:
-                    config["client_id"] = client_id
-                    config["refresh_token"] = refresh_token
 
             # 创建服务记录
             try:
@@ -566,3 +609,86 @@ async def test_tempmail_service(request: TempmailTestRequest):
     except Exception as e:
         logger.error(f"测试临时邮箱失败: {e}")
         return {"success": False, "message": f"测试失败: {str(e)}"}
+
+
+# ============== 收件箱 ==============
+
+@router.get("/{service_id}/inbox")
+async def get_outlook_inbox(
+    service_id: int,
+    count: int = Query(30, ge=1, le=100),
+    only_unseen: bool = Query(False),
+):
+    """获取 Outlook 收件箱邮件列表"""
+    with get_db() as db:
+        service = db.query(EmailServiceModel).filter(EmailServiceModel.id == service_id).first()
+        if not service:
+            raise HTTPException(status_code=404, detail="服务不存在")
+        if service.service_type != "outlook":
+            raise HTTPException(status_code=400, detail="仅支持 Outlook 类型服务")
+
+        config = service.config or {}
+        email_addr = config.get("email", "")
+        client_id = config.get("client_id", "")
+        refresh_token = config.get("refresh_token", "")
+
+        # client_id 为空时尝试使用全局默认值
+        if not client_id:
+            from ...config.settings import get_settings
+            client_id = get_settings().outlook_default_client_id or ""
+
+        if not client_id or not refresh_token:
+            raise HTTPException(status_code=400, detail="该账户缺少 OAuth 配置（client_id / refresh_token），无法读取收件箱")
+
+    try:
+        from ...services.outlook.account import OutlookAccount
+        from ...services.outlook.token_manager import TokenManager
+        from ...services.outlook.providers.imap_new import IMAPNewProvider
+        from ...services.outlook.providers.base import ProviderConfig
+
+        account = OutlookAccount(
+            email=email_addr,
+            password=config.get("password", ""),
+            client_id=client_id,
+            refresh_token=refresh_token,
+        )
+        provider_config = ProviderConfig(
+            proxy_url=None,
+            timeout=30,
+            service_id=service_id,
+        )
+        provider = IMAPNewProvider(account, provider_config)
+
+        connected = provider.connect()
+        if not connected:
+            raise HTTPException(status_code=502, detail="IMAP 连接失败，请检查 OAuth 配置")
+
+        try:
+            messages = provider.get_recent_emails(count=count, only_unseen=only_unseen)
+        finally:
+            provider.disconnect()
+
+        emails = []
+        for m in messages:
+            received_str = m.received_at.isoformat() if m.received_at else None
+            emails.append({
+                "id": m.id or "",
+                "subject": m.subject or "",
+                "sender": m.sender or "",
+                "received_at": received_str,
+                "body_preview": m.body_preview or (m.body or "")[:200],
+                "body": m.body or "",
+                "is_read": m.is_read,
+            })
+
+        return {
+            "email": email_addr,
+            "total": len(emails),
+            "emails": emails,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取收件箱失败 service_id={service_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"获取收件箱失败: {str(e)}")

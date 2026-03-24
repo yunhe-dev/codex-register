@@ -31,6 +31,7 @@ const elements = {
     proxiesTable: document.getElementById('proxies-table'),
     addProxyBtn: document.getElementById('add-proxy-btn'),
     testAllProxiesBtn: document.getElementById('test-all-proxies-btn'),
+    deleteDisabledProxiesBtn: document.getElementById('delete-disabled-proxies-btn'),
     addProxyModal: document.getElementById('add-proxy-modal'),
     proxyItemForm: document.getElementById('proxy-item-form'),
     closeProxyModal: document.getElementById('close-proxy-modal'),
@@ -208,6 +209,10 @@ function initEventListeners() {
 
     if (elements.testAllProxiesBtn) {
         elements.testAllProxiesBtn.addEventListener('click', handleTestAllProxies);
+    }
+
+    if (elements.deleteDisabledProxiesBtn) {
+        elements.deleteDisabledProxiesBtn.addEventListener('click', handleDeleteDisabledProxies);
     }
 
     if (elements.closeProxyModal) {
@@ -683,22 +688,27 @@ async function handleOutlookBatchImport() {
 
     lines.forEach((line, index) => {
         const parts = line.split('----').map(p => p.trim());
-        if (parts.length < 2) {
-            errors.push(`第 ${index + 1} 行格式错误`);
+        if (parts.length < 4) {
+            errors.push(`第 ${index + 1} 行格式错误，必须为 邮箱----密码----client_id----refresh_token`);
             return;
         }
 
         const account = {
             email: parts[0],
             password: parts[1],
-            client_id: parts[2] || null,
-            refresh_token: parts[3] || null,
+            client_id: parts[2],
+            refresh_token: parts[3],
             enabled: enabled,
             priority: priority
         };
 
         if (!account.email.includes('@')) {
             errors.push(`第 ${index + 1} 行邮箱格式错误: ${account.email}`);
+            return;
+        }
+
+        if (!account.client_id || !account.refresh_token) {
+            errors.push(`第 ${index + 1} 行 client_id 或 refresh_token 不能为空`);
             return;
         }
 
@@ -777,11 +787,13 @@ async function loadProxies() {
     try {
         const data = await api.get('/settings/proxies');
         renderProxies(data.proxies);
+        updateProxyBulkActions(data.proxies || []);
     } catch (error) {
         console.error('加载代理列表失败:', error);
+        updateProxyBulkActions([]);
         elements.proxiesTable.innerHTML = `
             <tr>
-                <td colspan="7">
+                <td colspan="8">
                     <div class="empty-state">
                         <div class="empty-state-icon">❌</div>
                         <div class="empty-state-title">加载失败</div>
@@ -797,7 +809,7 @@ function renderProxies(proxies) {
     if (!proxies || proxies.length === 0) {
         elements.proxiesTable.innerHTML = `
             <tr>
-                <td colspan="7">
+                <td colspan="8">
                     <div class="empty-state">
                         <div class="empty-state-icon">🌐</div>
                         <div class="empty-state-title">暂无代理</div>
@@ -839,6 +851,17 @@ function renderProxies(proxies) {
             </td>
         </tr>
     `).join('');
+}
+
+function updateProxyBulkActions(proxies) {
+    if (!elements.deleteDisabledProxiesBtn) return;
+
+    const disabledCount = (proxies || []).filter(proxy => !proxy.enabled).length;
+    elements.deleteDisabledProxiesBtn.disabled = disabledCount === 0;
+    elements.deleteDisabledProxiesBtn.dataset.count = String(disabledCount);
+    elements.deleteDisabledProxiesBtn.textContent = disabledCount > 0
+        ? `🧹 删除禁用项 (${disabledCount})`
+        : '🧹 删除禁用项';
 }
 
 function toggleSettingsMoreMenu(btn) {
@@ -936,7 +959,12 @@ async function testProxyItem(id) {
         if (result.success) {
             toast.success(result.message);
         } else {
-            toast.error(result.message);
+            if (result.auto_disabled) {
+                toast.warning(result.message);
+                await loadProxies();
+            } else {
+                toast.error(result.message);
+            }
         }
     } catch (error) {
         toast.error('测试失败: ' + error.message);
@@ -969,6 +997,22 @@ async function deleteProxyItem(id) {
     }
 }
 
+async function handleDeleteDisabledProxies() {
+    const count = Number(elements.deleteDisabledProxiesBtn?.dataset.count || 0);
+    if (!count) return;
+
+    const confirmed = await confirm(`确定要删除全部 ${count} 个已禁用代理吗？此操作不可恢复。`);
+    if (!confirmed) return;
+
+    try {
+        const result = await api.delete('/settings/proxies/disabled/batch-delete');
+        toast.success(result.message);
+        await loadProxies();
+    } catch (error) {
+        toast.error('批量删除失败: ' + error.message);
+    }
+}
+
 // 测试所有代理
 async function handleTestAllProxies() {
     elements.testAllProxiesBtn.disabled = true;
@@ -976,8 +1020,13 @@ async function handleTestAllProxies() {
 
     try {
         const result = await api.post('/settings/proxies/test-all');
-        toast.info(`测试完成: 成功 ${result.success}, 失败 ${result.failed}`);
-        loadProxies();
+        const summary = `测试完成: 成功 ${result.success}, 失败 ${result.failed}`;
+        if (result.auto_disabled > 0) {
+            toast.warning(`${summary}，已自动禁用 ${result.auto_disabled} 个`);
+        } else {
+            toast.info(summary);
+        }
+        await loadProxies();
     } catch (error) {
         toast.error('测试失败: ' + error.message);
     } finally {
@@ -1234,19 +1283,20 @@ async function loadCpaServices() {
         const services = await api.get('/cpa-services');
         renderCpaServicesTable(services);
     } catch (e) {
-        elements.cpaServicesTable.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--danger-color);">${e.message}</td></tr>`;
+        elements.cpaServicesTable.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--danger-color);">${e.message}</td></tr>`;
     }
 }
 
 function renderCpaServicesTable(services) {
     if (!services || services.length === 0) {
-        elements.cpaServicesTable.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">暂无 CPA 服务，点击「添加服务」新增</td></tr>';
+        elements.cpaServicesTable.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:20px;">暂无 CPA 服务，点击「添加服务」新增</td></tr>';
         return;
     }
     elements.cpaServicesTable.innerHTML = services.map(s => `
         <tr>
             <td>${escapeHtml(s.name)}</td>
             <td style="font-size:0.85rem;color:var(--text-muted);">${escapeHtml(s.api_url)}</td>
+            <td style="text-align:center;">${s.include_proxy_url ? '🟢' : '⚪'}</td>
             <td style="text-align:center;" title="${s.enabled ? '已启用' : '已禁用'}">${s.enabled ? '✅' : '⭕'}</td>
             <td style="text-align:center;">${s.priority}</td>
             <td style="white-space:nowrap;">
@@ -1265,6 +1315,7 @@ function openCpaServiceModal(service = null) {
     document.getElementById('cpa-service-token').value = '';
     document.getElementById('cpa-service-priority').value = service ? service.priority : 0;
     document.getElementById('cpa-service-enabled').checked = service ? service.enabled : true;
+    document.getElementById('cpa-service-include-proxy-url').checked = service ? !!service.include_proxy_url : false;
     elements.cpaServiceModalTitle.textContent = service ? '编辑 CPA 服务' : '添加 CPA 服务';
     elements.cpaServiceEditModal.classList.add('active');
 }
@@ -1290,6 +1341,7 @@ async function handleSaveCpaService(e) {
     const apiToken = document.getElementById('cpa-service-token').value.trim();
     const priority = parseInt(document.getElementById('cpa-service-priority').value) || 0;
     const enabled = document.getElementById('cpa-service-enabled').checked;
+    const includeProxyUrl = document.getElementById('cpa-service-include-proxy-url').checked;
 
     if (!name || !apiUrl) {
         toast.error('名称和 API URL 不能为空');
@@ -1301,7 +1353,7 @@ async function handleSaveCpaService(e) {
     }
 
     try {
-        const payload = { name, api_url: apiUrl, priority, enabled };
+        const payload = { name, api_url: apiUrl, priority, enabled, include_proxy_url: includeProxyUrl };
         if (apiToken) payload.api_token = apiToken;
 
         if (id) {

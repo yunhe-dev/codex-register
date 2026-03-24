@@ -102,9 +102,11 @@ class DatabaseSessionManager:
             # (表名, 列名, 各数据库类型定义)
             ("accounts", "cpa_uploaded", {
                 "default": "BOOLEAN DEFAULT FALSE",
+                "sqlite": "BOOLEAN DEFAULT 0",
             }),
             ("accounts", "cpa_uploaded_at", {
                 "default": "TIMESTAMP",
+                "sqlite": "DATETIME",
             }),
             ("accounts", "source", {
                 "default": "VARCHAR(20) DEFAULT 'register'",
@@ -114,15 +116,21 @@ class DatabaseSessionManager:
             }),
             ("accounts", "subscription_at", {
                 "default": "TIMESTAMP",
+                "sqlite": "DATETIME",
             }),
             ("accounts", "cookies", {
                 "default": "TEXT",
             }),
             ("proxies", "is_default", {
                 "default": "BOOLEAN DEFAULT FALSE",
+                "sqlite": "BOOLEAN DEFAULT 0",
             }),
             ("sub2api_services", "group_ids", {
                 "default": "TEXT DEFAULT '[]'",
+            }),
+            ("cpa_services", "include_proxy_url", {
+                "default": "BOOLEAN DEFAULT FALSE",
+                "sqlite": "BOOLEAN DEFAULT 0",
             }),
         ]
 
@@ -133,6 +141,14 @@ class DatabaseSessionManager:
         inspector = inspect(self.engine)
 
         with self.engine.connect() as conn:
+            # 数据迁移：将旧的 custom_domain 记录统一为 moe_mail
+            try:
+                conn.execute(text("UPDATE email_services SET service_type='moe_mail' WHERE service_type='custom_domain'"))
+                conn.execute(text("UPDATE accounts SET email_service='moe_mail' WHERE email_service='custom_domain'"))
+                conn.commit()
+            except Exception as e:
+                logger.warning(f"迁移 custom_domain -> moe_mail 时出错: {e}")
+
             for table_name, column_name, column_types in migrations:
                 try:
                     existing_columns = {col["name"] for col in inspector.get_columns(table_name)}

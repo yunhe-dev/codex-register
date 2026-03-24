@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>系统设置 - OpenAI 注册系统</title>
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/style.css?v={{ static_version }}">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚙️</text></svg>">
 </head>
 <body>
@@ -95,6 +95,7 @@
                         <h3>代理列表</h3>
                         <div style="display: flex; gap: var(--spacing-sm);">
                             <button class="btn btn-secondary btn-sm" id="test-all-proxies-btn">🔌 测试全部</button>
+                            <button class="btn btn-danger btn-sm" id="delete-disabled-proxies-btn" disabled>🧹 删除禁用项</button>
                             <button class="btn btn-primary btn-sm" id="add-proxy-btn">➕ 添加代理</button>
                         </div>
                     </div>
@@ -115,7 +116,7 @@
                                 </thead>
                                 <tbody id="proxies-table">
                                     <tr>
-                                        <td colspan="7">
+                                        <td colspan="8">
                                             <div class="empty-state">
                                                 <div class="empty-state-icon">🌐</div>
                                                 <div class="empty-state-title">暂无代理</div>
@@ -216,13 +217,14 @@
                                     <tr>
                                         <th style="width:150px;">名称</th>
                                         <th>API URL</th>
+                                        <th style="width:90px;">代理写入</th>
                                         <th style="width:80px;">状态</th>
                                         <th style="width:60px;text-align:center;">优先级</th>
                                         <th style="width:220px;">操作</th>
                                     </tr>
                                 </thead>
                                 <tbody id="cpa-services-table">
-                                    <tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">加载中...</td></tr>
+                                    <tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:20px;">加载中...</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -402,6 +404,7 @@
                             <div class="form-group">
                                 <label for="cpa-service-url">API URL *</label>
                                 <input type="text" id="cpa-service-url" placeholder="https://cpa.example.com" required>
+                                <p class="hint">支持填写根地址、`/v0/management` 或完整的 `/v0/management/auth-files` 地址</p>
                             </div>
                             <div class="form-group">
                                 <label for="cpa-service-token">API Token</label>
@@ -418,6 +421,10 @@
                                     <label style="margin-top:10px;display:flex;align-items:center;gap:8px;">
                                         <input type="checkbox" id="cpa-service-enabled" checked> 启用
                                     </label>
+                                    <label style="margin-top:10px;display:flex;align-items:center;gap:8px;">
+                                        <input type="checkbox" id="cpa-service-include-proxy-url"> 写入 auth file 的 <code>proxy_url</code>
+                                    </label>
+                                    <p class="hint">开启后，若账号记录了实际使用代理（含动态代理），上传到 CPA 时会一并写入。</p>
                                 </div>
                             </div>
                             <div class="form-actions">
@@ -581,7 +588,7 @@
         </main>
     </div>
 
-    <script src="/static/js/utils.js"></script>
-    <script src="/static/js/settings.js"></script>
+    <script src="/static/js/utils.js?v={{ static_version }}"></script>
+    <script src="/static/js/settings.js?v={{ static_version }}"></script>
 </body>
 </html>

@@ -21,8 +21,10 @@ let toastShown = false;  // 标记是否已显示过 toast
 let availableServices = {
     tempmail: { available: true, services: [] },
     outlook: { available: false, services: [] },
-    custom_domain: { available: false, services: [] },
-    temp_mail: { available: false, services: [] }
+    moe_mail: { available: false, services: [] },
+    temp_mail: { available: false, services: [] },
+    duck_mail: { available: false, services: [] },
+    freemail: { available: false, services: [] }
 };
 
 // WebSocket 相关变量
@@ -291,15 +293,15 @@ function updateEmailServiceOptions() {
     }
 
     // 自定义域名
-    if (availableServices.custom_domain.available) {
+    if (availableServices.moe_mail.available) {
         const optgroup = document.createElement('optgroup');
-        optgroup.label = `🔗 自定义域名 (${availableServices.custom_domain.count} 个服务)`;
+        optgroup.label = `🔗 自定义域名 (${availableServices.moe_mail.count} 个服务)`;
 
-        availableServices.custom_domain.services.forEach(service => {
+        availableServices.moe_mail.services.forEach(service => {
             const option = document.createElement('option');
-            option.value = `custom_domain:${service.id || 'default'}`;
-            option.textContent = service.name;
-            option.dataset.type = 'custom_domain';
+            option.value = `moe_mail:${service.id || 'default'}`;
+            option.textContent = service.name + (service.default_domain ? ` (@${service.default_domain})` : '');
+            option.dataset.type = 'moe_mail';
             if (service.id) {
                 option.dataset.serviceId = service.id;
             }
@@ -336,6 +338,40 @@ function updateEmailServiceOptions() {
 
         select.appendChild(optgroup);
     }
+
+    // DuckMail
+    if (availableServices.duck_mail && availableServices.duck_mail.available) {
+        const optgroup = document.createElement('optgroup');
+        optgroup.label = `🦆 DuckMail (${availableServices.duck_mail.count} 个服务)`;
+
+        availableServices.duck_mail.services.forEach(service => {
+            const option = document.createElement('option');
+            option.value = `duck_mail:${service.id}`;
+            option.textContent = service.name + (service.default_domain ? ` (@${service.default_domain})` : '');
+            option.dataset.type = 'duck_mail';
+            option.dataset.serviceId = service.id;
+            optgroup.appendChild(option);
+        });
+
+        select.appendChild(optgroup);
+    }
+
+    // Freemail
+    if (availableServices.freemail && availableServices.freemail.available) {
+        const optgroup = document.createElement('optgroup');
+        optgroup.label = `📧 Freemail (${availableServices.freemail.count} 个服务)`;
+
+        availableServices.freemail.services.forEach(service => {
+            const option = document.createElement('option');
+            option.value = `freemail:${service.id}`;
+            option.textContent = service.name + (service.domain ? ` (@${service.domain})` : '');
+            option.dataset.type = 'freemail';
+            option.dataset.serviceId = service.id;
+            optgroup.appendChild(option);
+        });
+
+        select.appendChild(optgroup);
+    }
 }
 
 // 处理邮箱服务切换
@@ -344,8 +380,6 @@ function handleServiceChange(e) {
     if (!value) return;
 
     const [type, id] = value.split(':');
-    const selectedOption = e.target.options[e.target.selectedIndex];
-
     // 处理 Outlook 批量注册模式
     if (type === 'outlook_batch') {
         isOutlookBatchMode = true;
@@ -368,10 +402,25 @@ function handleServiceChange(e) {
         if (service) {
             addLog('info', `[系统] 已选择 Outlook 账户: ${service.name}`);
         }
-    } else if (type === 'custom_domain') {
-        const service = availableServices.custom_domain.services.find(s => s.id == id);
+    } else if (type === 'moe_mail') {
+        const service = availableServices.moe_mail.services.find(s => s.id == id);
         if (service) {
             addLog('info', `[系统] 已选择自定义域名服务: ${service.name}`);
+        }
+    } else if (type === 'temp_mail') {
+        const service = availableServices.temp_mail.services.find(s => s.id == id);
+        if (service) {
+            addLog('info', `[系统] 已选择 Temp-Mail 自部署服务: ${service.name}`);
+        }
+    } else if (type === 'duck_mail') {
+        const service = availableServices.duck_mail.services.find(s => s.id == id);
+        if (service) {
+            addLog('info', `[系统] 已选择 DuckMail 服务: ${service.name}`);
+        }
+    } else if (type === 'freemail') {
+        const service = availableServices.freemail.services.find(s => s.id == id);
+        if (service) {
+            addLog('info', `[系统] 已选择 Freemail 服务: ${service.name}`);
         }
     }
 }
@@ -503,6 +552,12 @@ function connectWebSocket(taskUuid) {
                 const logType = getLogType(data.message);
                 addLog(logType, data.message);
             } else if (data.type === 'status') {
+                if (data.email) {
+                    elements.taskEmail.textContent = data.email;
+                }
+                if (data.email_service) {
+                    elements.taskService.textContent = getServiceTypeText(data.email_service);
+                }
                 updateTaskStatus(data.status);
 
                 // 检查是否完成
@@ -1000,7 +1055,6 @@ function resetButtons() {
     elements.cancelBtn.disabled = true;
     currentTask = null;
     currentBatch = null;
-    isBatchMode = false;
     // 重置完成标志
     taskCompleted = false;
     batchCompleted = false;
@@ -1226,12 +1280,13 @@ function connectBatchWebSocket(batchId) {
                     if (!toastShown) {
                         toastShown = true;
                         if (data.status === 'completed') {
-                            addLog('success', `[完成] Outlook 批量任务完成！成功: ${data.success}, 失败: ${data.failed}, 跳过: ${data.skipped || 0}`);
+                            const batchLabel = isOutlookBatchMode ? 'Outlook 批量' : '批量';
+                            addLog('success', `[完成] ${batchLabel}任务完成！成功: ${data.success}, 失败: ${data.failed}, 跳过: ${data.skipped || 0}`);
                             if (data.success > 0) {
-                                toast.success(`Outlook 批量注册完成，成功 ${data.success} 个`);
+                                toast.success(`${batchLabel}注册完成，成功 ${data.success} 个`);
                                 loadRecentAccounts();
                             } else {
-                                toast.warning('Outlook 批量注册完成，但没有成功注册任何账号');
+                                toast.warning(`${batchLabel}注册完成，但没有成功注册任何账号`);
                             }
                         } else if (data.status === 'failed') {
                             addLog('error', '[错误] 批量任务执行失败');
@@ -1257,7 +1312,7 @@ function connectBatchWebSocket(batchId) {
 
             if (shouldPoll && currentBatch) {
                 console.log('切换到轮询模式');
-                startOutlookBatchPolling(currentBatch.batch_id);
+                startCurrentBatchPolling(currentBatch.batch_id);
             }
         };
 
@@ -1265,12 +1320,12 @@ function connectBatchWebSocket(batchId) {
             console.error('批量任务 WebSocket 错误:', error);
             stopBatchWebSocketHeartbeat();
             // 切换到轮询
-            startOutlookBatchPolling(batchId);
+            startCurrentBatchPolling(batchId);
         };
 
     } catch (error) {
         console.error('批量任务 WebSocket 连接失败:', error);
-        startOutlookBatchPolling(batchId);
+        startCurrentBatchPolling(batchId);
     }
 }
 
@@ -1281,6 +1336,15 @@ function disconnectBatchWebSocket() {
         batchWebSocket.close();
         batchWebSocket = null;
     }
+}
+
+function startCurrentBatchPolling(batchId) {
+    if (isOutlookBatchMode) {
+        startOutlookBatchPolling(batchId);
+        return;
+    }
+
+    startBatchPolling(batchId);
 }
 
 // 开始批量任务心跳
