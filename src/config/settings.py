@@ -783,6 +783,15 @@ def get_settings() -> Settings:
     return _settings
 
 
+def reload_settings() -> Settings:
+    """
+    重新从数据库加载配置并刷新单例缓存。
+    """
+    global _settings
+    _settings = None
+    return get_settings()
+
+
 def update_settings(**kwargs) -> Settings:
     """
     更新配置并保存到数据库

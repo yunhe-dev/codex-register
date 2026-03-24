@@ -18,8 +18,9 @@ def initialize_database(database_url: str = None):
     db_manager.create_tables()
 
     # 初始化默认设置（从 settings 模块导入以避免循环导入）
-    from ..config.settings import init_default_settings
+    from ..config.settings import init_default_settings, reload_settings
     init_default_settings()
+    reload_settings()
 
     return db_manager
 
@@ -40,8 +41,9 @@ def reset_database(database_url: str = None):
     print("已重新创建所有表")
 
     # 初始化默认设置
-    from ..config.settings import init_default_settings
+    from ..config.settings import init_default_settings, reload_settings
     init_default_settings()
+    reload_settings()
 
     print("数据库重置完成")
     return db_manager

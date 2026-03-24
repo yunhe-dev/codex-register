@@ -48,6 +48,13 @@ def _build_static_asset_version(static_dir: Path) -> str:
 
 def create_app() -> FastAPI:
     """创建 FastAPI 应用实例"""
+    from ..database.init_db import initialize_database
+
+    try:
+        initialize_database()
+    except Exception as e:
+        logger.warning(f"应用创建前数据库初始化失败: {e}")
+
     settings = get_settings()
 
     app = FastAPI(
