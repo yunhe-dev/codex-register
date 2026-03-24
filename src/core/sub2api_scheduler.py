@@ -30,7 +30,7 @@ _scheduler_task: Optional[asyncio.Task] = None
 _auto_registering_services = set()
 _auto_registering_lock = threading.Lock()
 _scheduler_state_lock = threading.Lock()
-AUTO_REGISTER_MAX_ROUNDS = 5
+AUTO_REGISTER_RETRY_DELAY_SECONDS = 10
 
 _scheduler_state = {
     "is_running": False,
@@ -142,7 +142,7 @@ async def trigger_auto_registration(count: int, sub2api_service_id: int, current
             f"开始为服务 {sub2api_service_id} 自动补注册，目标成功补充 {target_success_count} 个账号",
         )
 
-        while remaining_to_create > 0 and round_index < AUTO_REGISTER_MAX_ROUNDS:
+        while remaining_to_create > 0:
             round_index += 1
             task_uuids = [str(uuid.uuid4()) for _ in range(remaining_to_create)]
             batch_id = str(uuid.uuid4())
@@ -209,9 +209,14 @@ async def trigger_auto_registration(count: int, sub2api_service_id: int, current
             if round_success_count == 0 and remaining_to_create > 0:
                 append_system_log(
                     "warning",
-                    f"自动补注册第 {round_index} 轮没有新增成功账号，停止继续重试，剩余缺口 {remaining_to_create}",
+                    f"自动补注册第 {round_index} 轮没有新增成功账号，{AUTO_REGISTER_RETRY_DELAY_SECONDS} 秒后继续重试，剩余缺口 {remaining_to_create}",
                 )
-                break
+                await asyncio.sleep(AUTO_REGISTER_RETRY_DELAY_SECONDS)
+            elif remaining_to_create > 0:
+                append_system_log(
+                    "info",
+                    f"自动补注册仍有剩余缺口 {remaining_to_create}，继续下一轮补货",
+                )
 
         if remaining_to_create == 0:
             _update_scheduler_state(
