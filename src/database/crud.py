@@ -605,6 +605,7 @@ def create_sub2api_service(
     api_url: str,
     api_key: str,
     group_ids: Optional[list] = None,
+    proxy_id: Optional[int] = None,
     enabled: bool = True,
     priority: int = 0
 ) -> Sub2ApiService:
@@ -614,6 +615,7 @@ def create_sub2api_service(
         api_url=api_url,
         api_key=api_key,
         group_ids=group_ids or [],
+        proxy_id=proxy_id,
         enabled=enabled,
         priority=priority,
     )

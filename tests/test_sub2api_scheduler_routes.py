@@ -36,6 +36,7 @@ def test_sub2api_scheduler_config_round_trip(monkeypatch, tmp_path):
                 "register_enabled": True,
                 "register_threshold": 7,
                 "register_batch_count": 3,
+                "register_max_attempts": 10,
                 "email_service": "temp_mail:12",
             },
         )
@@ -51,6 +52,7 @@ def test_sub2api_scheduler_config_round_trip(monkeypatch, tmp_path):
             "register_enabled": True,
             "register_threshold": 7,
             "register_batch_count": 3,
+            "register_max_attempts": 10,
             "email_service": "temp_mail:12",
         }
 
@@ -68,6 +70,7 @@ def test_sub2api_scheduler_stop_request_persists_disabled_flags(monkeypatch, tmp
                 "register_enabled": True,
                 "register_threshold": 10,
                 "register_batch_count": 5,
+                "register_max_attempts": 10,
                 "email_service": "tempmail:default",
             },
         )
@@ -81,6 +84,7 @@ def test_sub2api_scheduler_stop_request_persists_disabled_flags(monkeypatch, tmp
                 "register_enabled": False,
                 "register_threshold": 10,
                 "register_batch_count": 5,
+                "register_max_attempts": 10,
                 "email_service": "tempmail:default",
             },
         )

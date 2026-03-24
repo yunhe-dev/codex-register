@@ -245,13 +245,14 @@
                                         <th style="width:150px;">名称</th>
                                         <th>API URL</th>
                                         <th style="width:120px;">预设分组</th>
+                                        <th style="width:120px;">预设代理</th>
                                         <th style="width:80px;">状态</th>
                                         <th style="width:60px;text-align:center;">优先级</th>
                                         <th style="width:220px;">操作</th>
                                     </tr>
                                 </thead>
                                 <tbody id="sub2api-services-table">
-                                    <tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:20px;">加载中...</td></tr>
+                                    <tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:20px;">加载中...</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -363,6 +364,13 @@
                                 </div>
                                 <p class="hint">先测试连接后点击「获取分组」，上传时会自动绑定到选中分组</p>
                             </div>
+                            <div class="form-group">
+                                <label for="sub2api-service-proxy-select">预设代理（单选）</label>
+                                <select id="sub2api-service-proxy-select">
+                                    <option value="">请点击「获取代理」加载</option>
+                                </select>
+                                <p class="hint">上传账号时会自动把所选代理 ID 写入 smewai 账号的 proxy_id</p>
+                            </div>
                             <div class="form-row">
                                 <div class="form-group">
                                     <label for="sub2api-service-priority">优先级</label>
@@ -379,6 +387,7 @@
                             <div class="form-actions">
                                 <button type="submit" class="btn btn-primary">💾 保存</button>
                                 <button type="button" class="btn btn-secondary" id="fetch-sub2api-groups-btn">📂 获取分组</button>
+                                <button type="button" class="btn btn-secondary" id="fetch-sub2api-proxies-btn">🌐 获取代理</button>
                                 <button type="button" class="btn btn-secondary" id="test-sub2api-service-btn">🔌 测试连接</button>
                                 <button type="button" class="btn btn-secondary" id="cancel-sub2api-service-btn">取消</button>
                             </div>

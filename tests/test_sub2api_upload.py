@@ -61,6 +61,64 @@ def test_list_sub2api_openai_accounts_handles_paginated_response(monkeypatch):
     assert calls[1]["kwargs"]["params"]["page"] == 2
 
 
+def test_list_sub2api_proxies_handles_success_wrapper(monkeypatch):
+    calls = []
+
+    def fake_get(url, **kwargs):
+        calls.append({"url": url, "kwargs": kwargs})
+        return FakeResponse(
+            status_code=200,
+            payload={
+                "success": True,
+                "data": [
+                    {
+                        "id": 7,
+                        "name": "Proxy A",
+                        "protocol": "socks5",
+                        "host": "1.2.3.4",
+                        "port": 1080,
+                        "status": "active",
+                    },
+                    {
+                        "id": "8",
+                        "name": "Proxy B",
+                        "protocol": "http",
+                        "host": "5.6.7.8",
+                        "port": 8080,
+                        "status": "inactive",
+                    },
+                ],
+            },
+        )
+
+    monkeypatch.setattr(sub2api_upload.cffi_requests, "get", fake_get)
+
+    proxies = sub2api_upload.list_sub2api_proxies(
+        "https://sub2api.example.com",
+        "key-123",
+    )
+
+    assert proxies == [
+        {
+            "id": 7,
+            "name": "Proxy A",
+            "protocol": "socks5",
+            "host": "1.2.3.4",
+            "port": 1080,
+            "status": "active",
+        },
+        {
+            "id": 8,
+            "name": "Proxy B",
+            "protocol": "http",
+            "host": "5.6.7.8",
+            "port": 8080,
+            "status": "inactive",
+        },
+    ]
+    assert calls[0]["url"] == "https://sub2api.example.com/api/v1/admin/proxies/all"
+
+
 def test_test_sub2api_account_returns_false_for_explicit_failure(monkeypatch):
     def fake_post(url, **kwargs):
         return FakeResponse(status_code=200, payload={"success": False, "message": "token expired"})
@@ -75,6 +133,43 @@ def test_test_sub2api_account_returns_false_for_explicit_failure(monkeypatch):
 
     assert result is False
     assert message == "token expired"
+
+
+def test_upload_to_sub2api_uses_account_create_when_proxy_id_is_configured(monkeypatch):
+    calls = []
+
+    def fake_post(url, **kwargs):
+        calls.append({"url": url, "kwargs": kwargs})
+        return FakeResponse(status_code=201, payload={"success": True})
+
+    account = type(
+        "AccountStub",
+        (),
+        {
+            "email": "tester@example.com",
+            "access_token": "token-123",
+            "expires_at": None,
+            "account_id": "acct-1",
+            "client_id": "client-1",
+            "workspace_id": "ws-1",
+            "refresh_token": "refresh-1",
+        },
+    )()
+
+    monkeypatch.setattr(sub2api_upload.cffi_requests, "post", fake_post)
+
+    success, message = sub2api_upload.upload_to_sub2api(
+        [account],
+        "https://sub2api.example.com",
+        "key-123",
+        proxy_id=42,
+    )
+
+    assert success is True
+    assert "绑定代理" in message
+    assert calls[0]["url"] == "https://sub2api.example.com/api/v1/admin/accounts"
+    assert calls[0]["kwargs"]["json"]["proxy_id"] == 42
+    assert calls[0]["kwargs"]["json"]["group_ids"] == []
 
 
 def test_test_sub2api_account_returns_unknown_on_timeout(monkeypatch):

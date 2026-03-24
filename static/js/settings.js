@@ -59,9 +59,11 @@ const elements = {
     sub2ApiServiceModalTitle: document.getElementById('sub2api-service-modal-title'),
     testSub2ApiServiceBtn: document.getElementById('test-sub2api-service-btn'),
     fetchSub2ApiGroupsBtn: document.getElementById('fetch-sub2api-groups-btn'),
+    fetchSub2ApiProxiesBtn: document.getElementById('fetch-sub2api-proxies-btn'),
     sub2ApiServiceGroupsList: document.getElementById('sub2api-service-groups-list'),
     sub2ApiServiceSelectedGroups: document.getElementById('sub2api-service-selected-groups'),
     clearSub2ApiSelectedGroupsBtn: document.getElementById('clear-sub2api-selected-groups-btn'),
+    sub2ApiServiceProxySelect: document.getElementById('sub2api-service-proxy-select'),
     // Team Manager 服务管理
     addTmServiceBtn: document.getElementById('add-tm-service-btn'),
     tmServicesTable: document.getElementById('tm-services-table'),
@@ -324,8 +326,17 @@ function initEventListeners() {
     if (elements.fetchSub2ApiGroupsBtn) {
         elements.fetchSub2ApiGroupsBtn.addEventListener('click', handleFetchSub2ApiGroups);
     }
+    if (elements.fetchSub2ApiProxiesBtn) {
+        elements.fetchSub2ApiProxiesBtn.addEventListener('click', handleFetchSub2ApiProxies);
+    }
     if (elements.clearSub2ApiSelectedGroupsBtn) {
         elements.clearSub2ApiSelectedGroupsBtn.addEventListener('click', clearSelectedSub2ApiGroups);
+    }
+    if (elements.sub2ApiServiceProxySelect) {
+        elements.sub2ApiServiceProxySelect.addEventListener('change', (e) => {
+            const value = e.target.value;
+            _sub2apiSelectedProxyId = value ? parseInt(value, 10) : null;
+        });
     }
 }
 
@@ -1443,6 +1454,9 @@ let _sub2apiEditingId = null;
 let _sub2apiSelectedGroupIds = [];
 let _sub2apiGroupsLoaded = false;
 let _sub2apiAvailableGroups = [];
+let _sub2apiSelectedProxyId = null;
+let _sub2apiProxiesLoaded = false;
+let _sub2apiAvailableProxies = [];
 
 async function loadSub2ApiServices() {
     try {
@@ -1450,7 +1464,7 @@ async function loadSub2ApiServices() {
         renderSub2ApiServices(services);
     } catch (e) {
         if (elements.sub2ApiServicesTable) {
-            elements.sub2ApiServicesTable.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:20px;">加载失败</td></tr>';
+            elements.sub2ApiServicesTable.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:20px;">加载失败</td></tr>';
         }
     }
 }
@@ -1458,7 +1472,7 @@ async function loadSub2ApiServices() {
 function renderSub2ApiServices(services) {
     if (!elements.sub2ApiServicesTable) return;
     if (!services || services.length === 0) {
-        elements.sub2ApiServicesTable.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:20px;">暂无 Sub2API 服务，点击「添加服务」新增</td></tr>';
+        elements.sub2ApiServicesTable.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:20px;">暂无 Sub2API 服务，点击「添加服务」新增</td></tr>';
         return;
     }
     elements.sub2ApiServicesTable.innerHTML = services.map(s => `
@@ -1466,6 +1480,7 @@ function renderSub2ApiServices(services) {
             <td>${escapeHtml(s.name)}</td>
             <td style="font-size:0.85rem;color:var(--text-muted);">${escapeHtml(s.api_url)}</td>
             <td style="text-align:center;">${Array.isArray(s.group_ids) && s.group_ids.length ? `${s.group_ids.length} 个` : '-'}</td>
+            <td style="text-align:center;">${s.proxy_id ? `#${s.proxy_id}` : '-'}</td>
             <td style="text-align:center;" title="${s.enabled ? '已启用' : '已禁用'}">${s.enabled ? '✅' : '⭕'}</td>
             <td style="text-align:center;">${s.priority}</td>
             <td style="white-space:nowrap;">
@@ -1482,10 +1497,14 @@ function openSub2ApiServiceModal(svc = null) {
     _sub2apiSelectedGroupIds = Array.isArray(svc?.group_ids) ? svc.group_ids.slice() : [];
     _sub2apiGroupsLoaded = false;
     _sub2apiAvailableGroups = [];
+    _sub2apiSelectedProxyId = Number.isFinite(parseInt(svc?.proxy_id, 10)) ? parseInt(svc.proxy_id, 10) : null;
+    _sub2apiProxiesLoaded = false;
+    _sub2apiAvailableProxies = [];
     elements.sub2ApiServiceModalTitle.textContent = svc ? '编辑 Sub2API 服务' : '添加 Sub2API 服务';
     elements.sub2ApiServiceForm.reset();
     document.getElementById('sub2api-service-id').value = svc ? svc.id : '';
     renderSub2ApiGroupOptions([], _sub2apiSelectedGroupIds, true);
+    renderSub2ApiProxyOptions([], _sub2apiSelectedProxyId, true);
     if (svc) {
         document.getElementById('sub2api-service-name').value = svc.name || '';
         document.getElementById('sub2api-service-url').value = svc.api_url || '';
@@ -1494,6 +1513,9 @@ function openSub2ApiServiceModal(svc = null) {
         document.getElementById('sub2api-service-key').placeholder = svc.has_key ? '已配置，留空保持不变' : '请输入 API Key';
         if (_sub2apiSelectedGroupIds.length) {
             handleFetchSub2ApiGroups(true);
+        }
+        if (_sub2apiSelectedProxyId) {
+            handleFetchSub2ApiProxies(true);
         }
     }
     elements.sub2ApiServiceEditModal.classList.add('active');
@@ -1506,7 +1528,11 @@ function closeSub2ApiServiceModal() {
     _sub2apiSelectedGroupIds = [];
     _sub2apiGroupsLoaded = false;
     _sub2apiAvailableGroups = [];
+    _sub2apiSelectedProxyId = null;
+    _sub2apiProxiesLoaded = false;
+    _sub2apiAvailableProxies = [];
     renderSub2ApiGroupOptions([], [], true);
+    renderSub2ApiProxyOptions([], null, true);
 }
 
 async function editSub2ApiService(id) {
@@ -1536,12 +1562,17 @@ async function handleSaveSub2ApiService(e) {
     if (!_sub2apiGroupsLoaded && _sub2apiEditingId && selectedGroupIds.length === 0 && _sub2apiSelectedGroupIds.length > 0) {
         selectedGroupIds = _sub2apiSelectedGroupIds.slice();
     }
+    let selectedProxyId = getSelectedSub2ApiProxyId();
+    if (!_sub2apiProxiesLoaded && _sub2apiEditingId && selectedProxyId === null && _sub2apiSelectedProxyId !== null) {
+        selectedProxyId = _sub2apiSelectedProxyId;
+    }
 
     const data = {
         name: document.getElementById('sub2api-service-name').value,
         api_url: document.getElementById('sub2api-service-url').value,
         api_key: document.getElementById('sub2api-service-key').value || undefined,
         group_ids: selectedGroupIds,
+        proxy_id: selectedProxyId,
         priority: parseInt(document.getElementById('sub2api-service-priority').value) || 0,
         enabled: document.getElementById('sub2api-service-enabled').checked,
     };
@@ -1618,6 +1649,10 @@ async function handleTestSub2ApiService() {
 
 function getSelectedSub2ApiGroupIds() {
     return _sub2apiSelectedGroupIds.slice();
+}
+
+function getSelectedSub2ApiProxyId() {
+    return _sub2apiSelectedProxyId;
 }
 
 function renderSub2ApiGroupOptions(groups = [], selected = [], loading = false) {
@@ -1709,6 +1744,40 @@ function renderSelectedSub2ApiGroups() {
     });
 }
 
+function renderSub2ApiProxyOptions(proxies = [], selected = null, loading = false) {
+    if (!elements.sub2ApiServiceProxySelect) return;
+    _sub2apiAvailableProxies = Array.isArray(proxies) ? proxies.slice() : [];
+    _sub2apiSelectedProxyId = Number.isFinite(parseInt(selected, 10)) ? parseInt(selected, 10) : null;
+    const select = elements.sub2ApiServiceProxySelect;
+    select.innerHTML = '';
+
+    const defaultOption = document.createElement('option');
+    defaultOption.value = '';
+    defaultOption.textContent = loading ? '请点击「获取代理」加载' : '不设置代理';
+    select.appendChild(defaultOption);
+
+    (_sub2apiAvailableProxies || []).forEach(proxy => {
+        const option = document.createElement('option');
+        option.value = String(proxy.id);
+        const host = proxy.host && proxy.port ? ` (${proxy.host}:${proxy.port})` : '';
+        option.textContent = `${proxy.name} (#${proxy.id})${host}`;
+        if (_sub2apiSelectedProxyId === proxy.id) {
+            option.selected = true;
+        }
+        select.appendChild(option);
+    });
+
+    if (_sub2apiSelectedProxyId !== null && !_sub2apiAvailableProxies.some(proxy => proxy.id === _sub2apiSelectedProxyId)) {
+        const fallbackOption = document.createElement('option');
+        fallbackOption.value = String(_sub2apiSelectedProxyId);
+        fallbackOption.textContent = `当前代理 #${_sub2apiSelectedProxyId}`;
+        fallbackOption.selected = true;
+        select.appendChild(fallbackOption);
+    }
+
+    select.value = _sub2apiSelectedProxyId !== null ? String(_sub2apiSelectedProxyId) : '';
+}
+
 async function handleFetchSub2ApiGroups(silent = false) {
     const id = document.getElementById('sub2api-service-id').value;
     const apiUrl = document.getElementById('sub2api-service-url').value.trim();
@@ -1746,6 +1815,46 @@ async function handleFetchSub2ApiGroups(silent = false) {
         if (elements.fetchSub2ApiGroupsBtn) {
             elements.fetchSub2ApiGroupsBtn.disabled = false;
             elements.fetchSub2ApiGroupsBtn.textContent = '📂 获取分组';
+        }
+    }
+}
+
+async function handleFetchSub2ApiProxies(silent = false) {
+    const id = document.getElementById('sub2api-service-id').value;
+    const apiUrl = document.getElementById('sub2api-service-url').value.trim();
+    const apiKey = document.getElementById('sub2api-service-key').value.trim();
+
+    if (!id && (!apiUrl || !apiKey)) {
+        toast.error('请先填写 API URL 和 API Key');
+        return;
+    }
+
+    if (elements.fetchSub2ApiProxiesBtn) {
+        elements.fetchSub2ApiProxiesBtn.disabled = true;
+        elements.fetchSub2ApiProxiesBtn.textContent = '获取中...';
+    }
+
+    try {
+        let result;
+        if (id && !apiKey) {
+            result = await api.get(`/sub2api-services/${id}/proxies`);
+        } else {
+            result = await api.post('/sub2api-services/proxies/fetch', {
+                api_url: apiUrl,
+                api_key: apiKey
+            });
+        }
+        const proxies = Array.isArray(result.proxies) ? result.proxies : [];
+        _sub2apiProxiesLoaded = true;
+        renderSub2ApiProxyOptions(proxies, _sub2apiSelectedProxyId, false);
+        if (!silent) toast.success(`已加载 ${proxies.length} 个代理`);
+    } catch (e) {
+        renderSub2ApiProxyOptions([], _sub2apiSelectedProxyId, false);
+        if (!silent) toast.error('获取代理失败: ' + e.message);
+    } finally {
+        if (elements.fetchSub2ApiProxiesBtn) {
+            elements.fetchSub2ApiProxiesBtn.disabled = false;
+            elements.fetchSub2ApiProxiesBtn.textContent = '🌐 获取代理';
         }
     }
 }

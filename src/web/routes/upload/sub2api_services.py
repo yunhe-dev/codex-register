@@ -2,6 +2,7 @@
 Sub2API 服务管理 API 路由
 """
 
+import logging
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -12,9 +13,11 @@ from ....core.upload.sub2api_upload import (
     test_sub2api_connection,
     batch_upload_to_sub2api,
     list_sub2api_groups,
+    list_sub2api_proxies,
 )
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 # ============== Pydantic Models ==============
@@ -24,6 +27,7 @@ class Sub2ApiServiceCreate(BaseModel):
     api_url: str
     api_key: str
     group_ids: List[int] = []
+    proxy_id: Optional[int] = None
     enabled: bool = True
     priority: int = 0
 
@@ -33,6 +37,7 @@ class Sub2ApiServiceUpdate(BaseModel):
     api_url: Optional[str] = None
     api_key: Optional[str] = None
     group_ids: Optional[List[int]] = None
+    proxy_id: Optional[int] = None
     enabled: Optional[bool] = None
     priority: Optional[int] = None
 
@@ -43,6 +48,7 @@ class Sub2ApiServiceResponse(BaseModel):
     api_url: str
     has_key: bool
     group_ids: List[int] = []
+    proxy_id: Optional[int] = None
     enabled: bool
     priority: int
     created_at: Optional[str] = None
@@ -77,6 +83,7 @@ def _to_response(svc) -> Sub2ApiServiceResponse:
         api_url=svc.api_url,
         has_key=bool(svc.api_key),
         group_ids=svc.group_ids or [],
+        proxy_id=svc.proxy_id,
         enabled=svc.enabled,
         priority=svc.priority,
         created_at=svc.created_at.isoformat() if svc.created_at else None,
@@ -104,6 +111,7 @@ async def create_sub2api_service(request: Sub2ApiServiceCreate):
             api_url=request.api_url,
             api_key=request.api_key,
             group_ids=request.group_ids,
+            proxy_id=request.proxy_id,
             enabled=request.enabled,
             priority=request.priority,
         )
@@ -133,6 +141,7 @@ async def get_sub2api_service_full(service_id: int):
             "api_url": svc.api_url,
             "api_key": svc.api_key,
             "group_ids": svc.group_ids or [],
+            "proxy_id": svc.proxy_id,
             "enabled": svc.enabled,
             "priority": svc.priority,
         }
@@ -154,8 +163,12 @@ async def update_sub2api_service(service_id: int, request: Sub2ApiServiceUpdate)
         # api_key 留空则保持原值
         if request.api_key:
             update_data["api_key"] = request.api_key
+        changed_fields = getattr(request, "model_fields_set", None) or getattr(request, "__fields_set__", set())
+
         if request.group_ids is not None:
             update_data["group_ids"] = request.group_ids
+        if "proxy_id" in changed_fields:
+            update_data["proxy_id"] = request.proxy_id
         if request.enabled is not None:
             update_data["enabled"] = request.enabled
         if request.priority is not None:
@@ -216,6 +229,26 @@ async def fetch_sub2api_groups(request: Sub2ApiFetchGroupsRequest):
     return {"success": True, "groups": groups}
 
 
+@router.get("/{service_id}/proxies")
+async def list_sub2api_service_proxies(service_id: int):
+    """获取指定 Sub2API 服务可用代理。"""
+    with get_db() as db:
+        svc = crud.get_sub2api_service_by_id(db, service_id)
+        if not svc:
+            raise HTTPException(status_code=404, detail="Sub2API 服务不存在")
+        proxies = list_sub2api_proxies(svc.api_url, svc.api_key)
+        return {"success": True, "proxies": proxies}
+
+
+@router.post("/proxies/fetch")
+async def fetch_sub2api_proxies(request: Sub2ApiTestRequest):
+    """直接通过 URL + Key 拉取 Sub2API 代理（用于保存前预览）。"""
+    if not request.api_url or not request.api_key:
+        raise HTTPException(status_code=400, detail="api_url 和 api_key 不能为空")
+    proxies = list_sub2api_proxies(request.api_url, request.api_key)
+    return {"success": True, "proxies": proxies}
+
+
 @router.post("/upload")
 async def upload_accounts_to_sub2api(request: Sub2ApiUploadRequest):
     """批量上传账号到 Sub2API 平台"""
@@ -234,6 +267,7 @@ async def upload_accounts_to_sub2api(request: Sub2ApiUploadRequest):
 
         api_url = svc.api_url
         api_key = svc.api_key
+        proxy_id = svc.proxy_id
 
     results = batch_upload_to_sub2api(
         request.account_ids,
@@ -242,5 +276,13 @@ async def upload_accounts_to_sub2api(request: Sub2ApiUploadRequest):
         concurrency=request.concurrency,
         priority=request.priority,
         group_ids=svc.group_ids or [],
+        proxy_id=proxy_id,
+    )
+    logger.info(
+        "Sub2API 服务页上传请求: service_id=%s accounts=%d group_ids=%s proxy_id=%s",
+        request.service_id,
+        len(request.account_ids),
+        svc.group_ids or [],
+        proxy_id,
     )
     return results

@@ -811,6 +811,7 @@ class Sub2ApiUploadRequest(BaseModel):
     concurrency: int = 3
     priority: int = 50
     group_ids: Optional[List[int]] = None
+    proxy_id: Optional[int] = None
 
 
 class BatchSub2ApiUploadRequest(BaseModel):
@@ -823,6 +824,7 @@ class BatchSub2ApiUploadRequest(BaseModel):
     service_id: Optional[int] = None  # 指定 Sub2API 服务 ID，不传则使用第一个启用的
     concurrency: int = 3
     priority: int = 50
+    proxy_id: Optional[int] = None
 
 
 @router.post("/batch-upload-sub2api")
@@ -832,6 +834,8 @@ async def batch_upload_accounts_to_sub2api(request: BatchSub2ApiUploadRequest):
     # 解析指定的 Sub2API 服务
     api_url = None
     api_key = None
+    group_ids = None
+    proxy_id = request.proxy_id
     if request.service_id:
         with get_db() as db:
             svc = crud.get_sub2api_service_by_id(db, request.service_id)
@@ -839,12 +843,18 @@ async def batch_upload_accounts_to_sub2api(request: BatchSub2ApiUploadRequest):
                 raise HTTPException(status_code=404, detail="指定的 Sub2API 服务不存在")
             api_url = svc.api_url
             api_key = svc.api_key
+            group_ids = svc.group_ids or []
+            if proxy_id is None:
+                proxy_id = svc.proxy_id
     else:
         with get_db() as db:
             svcs = crud.get_sub2api_services(db, enabled=True)
             if svcs:
                 api_url = svcs[0].api_url
                 api_key = svcs[0].api_key
+                group_ids = svcs[0].group_ids or []
+                if proxy_id is None:
+                    proxy_id = svcs[0].proxy_id
 
     if not api_url or not api_key:
         raise HTTPException(status_code=400, detail="未找到可用的 Sub2API 服务，请先在设置中配置")
@@ -859,6 +869,15 @@ async def batch_upload_accounts_to_sub2api(request: BatchSub2ApiUploadRequest):
         ids, api_url, api_key,
         concurrency=request.concurrency,
         priority=request.priority,
+        group_ids=group_ids or [],
+        proxy_id=proxy_id,
+    )
+    logger.info(
+        "Sub2API 批量上传请求: service_id=%s accounts=%d group_ids=%s proxy_id=%s",
+        request.service_id,
+        len(ids),
+        group_ids or [],
+        proxy_id,
     )
     return results
 
@@ -871,6 +890,7 @@ async def upload_account_to_sub2api(account_id: int, request: Optional[Sub2ApiUp
     concurrency = request.concurrency if request else 3
     priority = request.priority if request else 50
     group_ids = request.group_ids if request else None
+    proxy_id = request.proxy_id if request else None
 
     api_url = None
     api_key = None
@@ -883,6 +903,8 @@ async def upload_account_to_sub2api(account_id: int, request: Optional[Sub2ApiUp
             api_key = svc.api_key
             if group_ids is None:
                 group_ids = svc.group_ids or []
+            if proxy_id is None:
+                proxy_id = svc.proxy_id
     else:
         with get_db() as db:
             svcs = crud.get_sub2api_services(db, enabled=True)
@@ -891,6 +913,8 @@ async def upload_account_to_sub2api(account_id: int, request: Optional[Sub2ApiUp
                 api_key = svcs[0].api_key
                 if group_ids is None:
                     group_ids = svcs[0].group_ids or []
+                if proxy_id is None:
+                    proxy_id = svcs[0].proxy_id
 
     if not api_url or not api_key:
         raise HTTPException(status_code=400, detail="未找到可用的 Sub2API 服务，请先在设置中配置")
@@ -906,6 +930,16 @@ async def upload_account_to_sub2api(account_id: int, request: Optional[Sub2ApiUp
             [account], api_url, api_key,
             concurrency=concurrency, priority=priority,
             group_ids=group_ids or [],
+            proxy_id=proxy_id,
+        )
+        logger.info(
+            "Sub2API 单账号上传请求: account_id=%s email=%s service_id=%s group_ids=%s proxy_id=%s success=%s",
+            account_id,
+            account.email,
+            service_id,
+            group_ids or [],
+            proxy_id,
+            success,
         )
         if success:
             return {"success": True, "message": message}

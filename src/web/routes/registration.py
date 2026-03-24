@@ -98,6 +98,50 @@ def probe_task_exit_ip(proxy_url: Optional[str]) -> Tuple[Optional[str], Optiona
         return None, str(e)
 
 
+def _auto_upload_registered_account_to_sub2api(
+    db,
+    saved_account,
+    sub2api_service_ids: Optional[List[int]],
+    log_callback,
+) -> bool:
+    """将刚注册成功的账号自动上传到一个或多个 Sub2API 服务。"""
+    from ...core.upload import sub2api_upload
+
+    if not saved_account or not saved_account.access_token:
+        return False
+
+    service_ids = sub2api_service_ids or []
+    if not service_ids:
+        service_ids = [s.id for s in crud.get_sub2api_services(db, enabled=True)]
+    if not service_ids:
+        log_callback("[Sub2API] 无可用 Sub2API 服务，跳过上传")
+        return False
+
+    upload_success = True
+    for service_id in service_ids:
+        try:
+            svc = crud.get_sub2api_service_by_id(db, service_id)
+            if not svc:
+                upload_success = False
+                continue
+            log_callback(
+                f"[Sub2API] 上传到服务: {svc.name} group_ids={svc.group_ids or []} proxy_id={svc.proxy_id}"
+            )
+            ok, msg = sub2api_upload.upload_to_sub2api(
+                [saved_account],
+                svc.api_url,
+                svc.api_key,
+                group_ids=svc.group_ids or [],
+                proxy_id=svc.proxy_id,
+            )
+            upload_success = bool(upload_success and ok)
+            log_callback(f"[Sub2API] {'成功' if ok else '失败'}({svc.name}): {msg}")
+        except Exception as exc:
+            upload_success = False
+            log_callback(f"[Sub2API] 异常({service_id}): {exc}")
+    return upload_success
+
+
 # ============== Pydantic Models ==============
 
 class RegistrationTaskCreate(BaseModel):
@@ -501,36 +545,14 @@ def _run_sync_registration_task(task_uuid: str, email_service_type: str, proxy: 
                 # 自动上传到 Sub2API（可多服务）
                 if auto_upload_sub2api:
                     try:
-                        from ...core.upload.sub2api_upload import upload_to_sub2api
                         from ...database.models import Account as AccountModel
                         saved_account = db.query(AccountModel).filter_by(email=result.email).first()
-                        if saved_account and saved_account.access_token:
-                            _s2a_ids = sub2api_service_ids or []
-                            if not _s2a_ids:
-                                _s2a_ids = [s.id for s in crud.get_sub2api_services(db, enabled=True)]
-                            if not _s2a_ids:
-                                log_callback("[Sub2API] 无可用 Sub2API 服务，跳过上传")
-                                sub2api_upload_success = False
-                            else:
-                                sub2api_upload_success = True
-                            for _sid in _s2a_ids:
-                                try:
-                                    _svc = crud.get_sub2api_service_by_id(db, _sid)
-                                    if not _svc:
-                                        sub2api_upload_success = False
-                                        continue
-                                    log_callback(f"[Sub2API] 上传到服务: {_svc.name}")
-                                    _ok, _msg = upload_to_sub2api(
-                                        [saved_account], _svc.api_url, _svc.api_key,
-                                        group_ids=_svc.group_ids or [],
-                                    )
-                                    sub2api_upload_success = bool(sub2api_upload_success and _ok)
-                                    log_callback(f"[Sub2API] {'成功' if _ok else '失败'}({_svc.name}): {_msg}")
-                                except Exception as _e:
-                                    sub2api_upload_success = False
-                                    log_callback(f"[Sub2API] 异常({_sid}): {_e}")
-                        else:
-                            sub2api_upload_success = False
+                        sub2api_upload_success = _auto_upload_registered_account_to_sub2api(
+                            db,
+                            saved_account,
+                            sub2api_service_ids,
+                            log_callback,
+                        )
                     except Exception as s2a_err:
                         sub2api_upload_success = False
                         log_callback(f"[Sub2API] 上传异常: {s2a_err}")

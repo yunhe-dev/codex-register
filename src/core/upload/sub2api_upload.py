@@ -247,6 +247,7 @@ def upload_to_sub2api(
     concurrency: int = 3,
     priority: int = 50,
     group_ids: Optional[List[int]] = None,
+    proxy_id: Optional[int] = None,
 ) -> Tuple[bool, str]:
     """
     上传账号列表到 Sub2API 平台（不走代理）。
@@ -261,7 +262,14 @@ def upload_to_sub2api(
         return False, "Sub2API API Key 未配置"
 
     normalized_group_ids = _normalize_group_ids(group_ids)
-    if normalized_group_ids:
+    normalized_proxy_id = _normalize_proxy_id(proxy_id)
+    if normalized_group_ids or normalized_proxy_id is not None:
+        logger.info(
+            "Sub2API 上传切换为逐账号创建: accounts=%d group_ids=%s proxy_id=%s",
+            len(accounts),
+            normalized_group_ids,
+            normalized_proxy_id,
+        )
         success_count = 0
         failed_count = 0
         for acc in accounts:
@@ -274,16 +282,24 @@ def upload_to_sub2api(
                 concurrency=concurrency,
                 priority=priority,
                 group_ids=normalized_group_ids,
+                proxy_id=normalized_proxy_id,
             )
             if ok:
                 success_count += 1
             else:
                 failed_count += 1
 
+        binding_parts: List[str] = []
+        if normalized_group_ids:
+            binding_parts.append("分组")
+        if normalized_proxy_id is not None:
+            binding_parts.append("代理")
+        binding_label = "和".join(binding_parts) or "附加配置"
+
         if failed_count == 0 and success_count > 0:
-            return True, f"成功上传 {success_count} 个账号（并绑定分组）"
+            return True, f"成功上传 {success_count} 个账号（并绑定{binding_label}）"
         if success_count == 0:
-            return False, "分组上传失败"
+            return False, f"{binding_label}上传失败"
         return False, f"部分上传成功：成功 {success_count}，失败 {failed_count}"
 
     exported_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -340,6 +356,7 @@ def batch_upload_to_sub2api(
     concurrency: int = 3,
     priority: int = 50,
     group_ids: Optional[List[int]] = None,
+    proxy_id: Optional[int] = None,
 ) -> dict:
     """
     批量上传指定 ID 的账号到 Sub2API 平台。
@@ -369,7 +386,8 @@ def batch_upload_to_sub2api(
             return results
 
         normalized_group_ids = _normalize_group_ids(group_ids)
-        if normalized_group_ids:
+        normalized_proxy_id = _normalize_proxy_id(proxy_id)
+        if normalized_group_ids or normalized_proxy_id is not None:
             for acc in accounts:
                 ok, msg = _create_account_with_group_binding(
                     acc,
@@ -378,6 +396,7 @@ def batch_upload_to_sub2api(
                     concurrency=concurrency,
                     priority=priority,
                     group_ids=normalized_group_ids,
+                    proxy_id=normalized_proxy_id,
                 )
                 if ok:
                     results["success_count"] += 1
@@ -386,7 +405,15 @@ def batch_upload_to_sub2api(
                     results["failed_count"] += 1
                     results["details"].append({"id": acc.id, "email": acc.email, "success": False, "error": msg})
         else:
-            success, message = upload_to_sub2api(accounts, api_url, api_key, concurrency, priority, group_ids=None)
+            success, message = upload_to_sub2api(
+                accounts,
+                api_url,
+                api_key,
+                concurrency,
+                priority,
+                group_ids=None,
+                proxy_id=None,
+            )
             if success:
                 for acc in accounts:
                     results["success_count"] += 1
@@ -483,6 +510,55 @@ def list_sub2api_groups(api_url: str, api_key: str, platform: str = "openai") ->
                 "status": item.get("status", ""),
             })
         return groups
+    except Exception:
+        return []
+
+
+def list_sub2api_proxies(api_url: str, api_key: str) -> List[Dict[str, Any]]:
+    """获取 Sub2API 可用代理列表。"""
+    if not api_url or not api_key:
+        return []
+
+    url = _build_sub2api_admin_url(api_url, "/admin/proxies/all")
+    headers = _build_sub2api_headers(api_key)
+
+    try:
+        response = cffi_requests.get(
+            url,
+            headers=headers,
+            proxies=None,
+            timeout=15,
+            impersonate=DEFAULT_SUB2API_IMPERSONATE,
+        )
+        if response.status_code not in (200, 201):
+            return []
+
+        payload = response.json()
+        data = payload.get("data") if isinstance(payload, dict) else payload
+        if not isinstance(data, list):
+            return []
+
+        proxies: List[Dict[str, Any]] = []
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            proxy_id = item.get("id")
+            name = item.get("name")
+            if proxy_id is None or name is None:
+                continue
+            try:
+                proxy_id = int(proxy_id)
+            except Exception:
+                continue
+            proxies.append({
+                "id": proxy_id,
+                "name": str(name),
+                "protocol": str(item.get("protocol") or ""),
+                "host": str(item.get("host") or ""),
+                "port": item.get("port"),
+                "status": str(item.get("status") or ""),
+            })
+        return proxies
     except Exception:
         return []
 
@@ -684,8 +760,9 @@ def _create_account_with_group_binding(
     concurrency: int,
     priority: int,
     group_ids: List[int],
+    proxy_id: Optional[int],
 ) -> Tuple[bool, str]:
-    """按单账号创建接口上传并绑定分组（smewai 支持 group_ids）。"""
+    """按单账号创建接口上传并绑定分组/代理。"""
     expires_at = int(acc.expires_at.timestamp()) if acc.expires_at else 0
     payload = {
         "name": acc.email,
@@ -722,6 +799,16 @@ def _create_account_with_group_binding(
         "group_ids": group_ids,
         "confirm_mixed_channel_risk": True,
     }
+    if proxy_id is not None:
+        payload["proxy_id"] = proxy_id
+
+    logger.info(
+        "Sub2API 单账号上传: email=%s group_ids=%s proxy_id=%s has_proxy=%s",
+        acc.email,
+        group_ids,
+        proxy_id,
+        proxy_id is not None,
+    )
 
     url = _build_sub2api_admin_url(api_url, "/admin/accounts")
     headers = _build_sub2api_headers(api_key, content_type="application/json")
@@ -735,7 +822,7 @@ def _create_account_with_group_binding(
             impersonate=DEFAULT_SUB2API_IMPERSONATE,
         )
         if response.status_code in (200, 201):
-            return True, "上传并绑定分组成功"
+            return True, "上传并绑定分组/代理成功"
 
         err = f"HTTP {response.status_code}"
         try:
@@ -760,3 +847,13 @@ def _normalize_group_ids(group_ids: Optional[List[int]]) -> List[int]:
         if value > 0 and value not in out:
             out.append(value)
     return out
+
+
+def _normalize_proxy_id(proxy_id: Optional[int]) -> Optional[int]:
+    try:
+        value = int(proxy_id) if proxy_id is not None else None
+    except Exception:
+        return None
+    if value is None or value <= 0:
+        return None
+    return value

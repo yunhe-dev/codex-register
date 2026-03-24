@@ -128,6 +128,9 @@ class DatabaseSessionManager:
             ("sub2api_services", "group_ids", {
                 "default": "TEXT DEFAULT '[]'",
             }),
+            ("sub2api_services", "proxy_id", {
+                "default": "INTEGER",
+            }),
             ("cpa_services", "include_proxy_url", {
                 "default": "BOOLEAN DEFAULT FALSE",
                 "sqlite": "BOOLEAN DEFAULT 0",

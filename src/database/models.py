@@ -154,6 +154,7 @@ class Sub2ApiService(Base):
     api_url = Column(String(500), nullable=False)  # API URL (host)
     api_key = Column(Text, nullable=False)  # x-api-key
     group_ids = Column(JSONEncodedDict, default=list)  # 预设分组 ID 列表
+    proxy_id = Column(Integer)  # 预设远端代理 ID
     enabled = Column(Boolean, default=True)
     priority = Column(Integer, default=0)  # 优先级
     created_at = Column(DateTime, default=datetime.utcnow)
