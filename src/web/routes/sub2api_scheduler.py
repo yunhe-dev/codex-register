@@ -19,6 +19,7 @@ class Sub2ApiSchedulerConfig(BaseModel):
     register_enabled: bool
     register_threshold: int
     register_batch_count: int
+    register_max_attempts: int
     email_service: str
 
 
@@ -32,6 +33,7 @@ async def get_sub2api_scheduler_config():
         "register_enabled": settings.sub2api_auto_register_enabled,
         "register_threshold": settings.sub2api_auto_register_threshold,
         "register_batch_count": settings.sub2api_auto_register_batch_count,
+        "register_max_attempts": settings.sub2api_auto_register_max_attempts,
         "email_service": settings.sub2api_auto_register_email_service,
     }
 
@@ -64,6 +66,7 @@ async def update_sub2api_scheduler_config(request: Sub2ApiSchedulerConfig, backg
         sub2api_auto_register_enabled=request.register_enabled,
         sub2api_auto_register_threshold=request.register_threshold,
         sub2api_auto_register_batch_count=request.register_batch_count,
+        sub2api_auto_register_max_attempts=request.register_max_attempts,
         sub2api_auto_register_email_service=request.email_service,
     )
 

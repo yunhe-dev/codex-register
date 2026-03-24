@@ -105,6 +105,7 @@ const elements = {
     sub2apiAutoRegisterEnabled: document.getElementById('sub2api-auto-register-enabled'),
     sub2apiRegisterThreshold: document.getElementById('sub2api-register-threshold'),
     sub2apiRegisterBatchCount: document.getElementById('sub2api-register-batch-count'),
+    sub2apiRegisterMaxAttempts: document.getElementById('sub2api-register-max-attempts'),
     sub2apiSchedulerEmailService: document.getElementById('sub2api-scheduler-email-service'),
     sub2apiSaveConfigBtn: document.getElementById('sub2api-save-config-btn'),
     sub2apiStopTaskBtn: document.getElementById('sub2api-stop-task-btn'),
@@ -476,6 +477,7 @@ async function loadSub2ApiSchedulerConfig() {
         elements.sub2apiAutoRegisterEnabled.checked = !!config.register_enabled;
         elements.sub2apiRegisterThreshold.value = config.register_threshold ?? 10;
         elements.sub2apiRegisterBatchCount.value = config.register_batch_count ?? 5;
+        elements.sub2apiRegisterMaxAttempts.value = config.register_max_attempts ?? 10;
         populateSub2ApiSchedulerEmailServiceOptions(config.email_service || 'tempmail:default');
         updateSub2ApiSchedulerBadge(!!config.check_enabled);
     } catch (error) {
@@ -582,6 +584,7 @@ async function handleSaveSub2ApiSchedulerConfig() {
             register_enabled: elements.sub2apiAutoRegisterEnabled.checked,
             register_threshold: parseInt(elements.sub2apiRegisterThreshold.value) || 10,
             register_batch_count: parseInt(elements.sub2apiRegisterBatchCount.value) || 5,
+            register_max_attempts: parseInt(elements.sub2apiRegisterMaxAttempts.value) || 10,
             email_service: elements.sub2apiSchedulerEmailService ? elements.sub2apiSchedulerEmailService.value : 'tempmail:default',
         });
         updateSub2ApiSchedulerBadge(elements.sub2apiAutoCheckEnabled.checked);
@@ -609,6 +612,7 @@ async function handleStopSub2ApiSchedulerTask() {
             register_enabled: false,
             register_threshold: parseInt(elements.sub2apiRegisterThreshold.value) || 10,
             register_batch_count: parseInt(elements.sub2apiRegisterBatchCount.value) || 5,
+            register_max_attempts: parseInt(elements.sub2apiRegisterMaxAttempts.value) || 10,
             email_service: elements.sub2apiSchedulerEmailService ? elements.sub2apiSchedulerEmailService.value : 'tempmail:default',
         });
         updateSub2ApiSchedulerBadge(false);

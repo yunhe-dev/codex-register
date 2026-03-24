@@ -108,6 +108,11 @@ def _resolve_auto_register_email_service() -> Tuple[str, Optional[int]]:
     return "tempmail", None
 
 
+def _should_continue_auto_register() -> bool:
+    settings = get_settings()
+    return bool(settings.sub2api_auto_check_enabled and settings.sub2api_auto_register_enabled)
+
+
 async def trigger_auto_registration(count: int, sub2api_service_id: int, current_available_count: int = 0):
     logger.info("触发 Sub2API 自动补注册: count=%s service_id=%s", count, sub2api_service_id)
     if count <= 0:
@@ -127,6 +132,7 @@ async def trigger_auto_registration(count: int, sub2api_service_id: int, current
         total_success_count = 0
         total_created_count = 0
         round_index = 0
+        max_attempts = max(1, int(settings.sub2api_auto_register_max_attempts or 1))
 
         _update_scheduler_state(
             last_replenish_started_at=datetime.utcnow().isoformat(),
@@ -139,10 +145,24 @@ async def trigger_auto_registration(count: int, sub2api_service_id: int, current
 
         append_system_log(
             "info",
-            f"开始为服务 {sub2api_service_id} 自动补注册，目标成功补充 {target_success_count} 个账号",
+            f"开始为服务 {sub2api_service_id} 自动补注册，目标成功补充 {target_success_count} 个账号，最大尝试 {max_attempts} 轮",
         )
 
-        while remaining_to_create > 0:
+        while remaining_to_create > 0 and round_index < max_attempts:
+            if not _should_continue_auto_register():
+                _update_scheduler_state(
+                    last_replenish_finished_at=datetime.utcnow().isoformat(),
+                    last_replenish_status="cancelled",
+                    last_replenish_created_count=total_created_count,
+                    last_replenish_success_count=total_success_count,
+                    last_replenish_total_after=current_available_count + total_success_count,
+                )
+                append_system_log(
+                    "warning",
+                    f"服务 {sub2api_service_id} 自动补注册已被手动停止，目标 {target_success_count}，实际成功 {total_success_count}，剩余缺口 {remaining_to_create}",
+                )
+                return
+
             round_index += 1
             task_uuids = [str(uuid.uuid4()) for _ in range(remaining_to_create)]
             batch_id = str(uuid.uuid4())
@@ -211,7 +231,21 @@ async def trigger_auto_registration(count: int, sub2api_service_id: int, current
                     "warning",
                     f"自动补注册第 {round_index} 轮没有新增成功账号，{AUTO_REGISTER_RETRY_DELAY_SECONDS} 秒后继续重试，剩余缺口 {remaining_to_create}",
                 )
-                await asyncio.sleep(AUTO_REGISTER_RETRY_DELAY_SECONDS)
+                for _ in range(AUTO_REGISTER_RETRY_DELAY_SECONDS):
+                    if not _should_continue_auto_register():
+                        _update_scheduler_state(
+                            last_replenish_finished_at=datetime.utcnow().isoformat(),
+                            last_replenish_status="cancelled",
+                            last_replenish_created_count=total_created_count,
+                            last_replenish_success_count=total_success_count,
+                            last_replenish_total_after=current_available_count + total_success_count,
+                        )
+                        append_system_log(
+                            "warning",
+                            f"服务 {sub2api_service_id} 自动补注册在等待重试时被手动停止，目标 {target_success_count}，实际成功 {total_success_count}，剩余缺口 {remaining_to_create}",
+                        )
+                        return
+                    await asyncio.sleep(1)
             elif remaining_to_create > 0:
                 append_system_log(
                     "info",
@@ -240,7 +274,7 @@ async def trigger_auto_registration(count: int, sub2api_service_id: int, current
             )
             append_system_log(
                 "warning",
-                f"服务 {sub2api_service_id} 自动补注册结束，目标 {target_success_count}，实际成功 {total_success_count}，剩余缺口 {remaining_to_create}",
+                f"服务 {sub2api_service_id} 自动补注册结束，已达到最大尝试次数 {max_attempts}，目标 {target_success_count}，实际成功 {total_success_count}，剩余缺口 {remaining_to_create}",
             )
     finally:
         with _auto_registering_lock:

@@ -379,6 +379,12 @@ SETTING_DEFINITIONS: Dict[str, SettingDefinition] = {
         category=SettingCategory.SUB2API,
         description="Sub2API 每次自动补注册数量"
     ),
+    "sub2api_auto_register_max_attempts": SettingDefinition(
+        db_key="sub2api.auto_register_max_attempts",
+        default_value=10,
+        category=SettingCategory.SUB2API,
+        description="Sub2API 自动补注册最大尝试轮数"
+    ),
     "sub2api_auto_register_email_service": SettingDefinition(
         db_key="sub2api.auto_register_email_service",
         default_value="tempmail:default",
@@ -454,6 +460,7 @@ SETTING_TYPES: Dict[str, Type] = {
     "sub2api_auto_register_enabled": bool,
     "sub2api_auto_register_threshold": int,
     "sub2api_auto_register_batch_count": int,
+    "sub2api_auto_register_max_attempts": int,
     "email_code_timeout": int,
     "email_code_poll_interval": int,
     "outlook_health_failure_threshold": int,
@@ -743,6 +750,7 @@ class Settings(BaseModel):
     sub2api_auto_register_enabled: bool = False
     sub2api_auto_register_threshold: int = 10
     sub2api_auto_register_batch_count: int = 5
+    sub2api_auto_register_max_attempts: int = 10
     sub2api_auto_register_email_service: str = "tempmail:default"
 
     # 验证码配置
