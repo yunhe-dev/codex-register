@@ -547,6 +547,24 @@
                         </div>
                     </div>
 
+                    <!-- 后端控制台日志 -->
+                    <div class="card" id="backend-log-card">
+                        <div class="card-header">
+                            <h3 style="display:flex;align-items:center;gap:var(--spacing-sm);">
+                                <button class="btn btn-ghost backend-log-toggle-btn" id="toggle-backend-log-btn" title="折叠/展开">▾</button>
+                                <span>🧾 后台控制日志</span>
+                            </h3>
+                            <div style="display: flex; gap: var(--spacing-sm);">
+                                <button class="btn btn-ghost btn-sm" id="clear-backend-log-btn">清空</button>
+                            </div>
+                        </div>
+                        <div class="card-body" id="backend-log-body" style="padding: 0;">
+                            <div id="backend-console-log" class="console-log backend-console-log">
+                                <div class="log-line info">[系统] 等待后端日志...</div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- 已注册账号列表 -->
                     <div class="card">
                         <div class="card-header">

@@ -37,6 +37,8 @@ let activeTaskUuid = null;   // 当前活跃的单任务 UUID（用于页面重�
 let activeBatchId = null;    // 当前活跃的批量任务 ID（用于页面重新可见时重连）
 let systemLogPollingInterval = null;
 let lastSystemLogId = 0;
+let backendLogPollingInterval = null;
+let lastBackendLogTotalLines = null;
 let latestSub2ApiStatus = null;
 let currentSub2ApiCheckEnabled = false;
 let currentSub2ApiRegisterEnabled = false;
@@ -63,6 +65,10 @@ const elements = {
     taskStatusRow: document.getElementById('task-status-row'),
     batchProgressSection: document.getElementById('batch-progress-section'),
     consoleLog: document.getElementById('console-log'),
+    backendConsoleLog: document.getElementById('backend-console-log'),
+    backendLogBody: document.getElementById('backend-log-body'),
+    toggleBackendLogBtn: document.getElementById('toggle-backend-log-btn'),
+    clearBackendLogBtn: document.getElementById('clear-backend-log-btn'),
     clearLogBtn: document.getElementById('clear-log-btn'),
     // 任务状态
     taskId: document.getElementById('task-id'),
@@ -291,6 +297,16 @@ function initEventListeners() {
         elements.consoleLog.innerHTML = '<div class="log-line info">[系统] 日志已清空</div>';
         displayedLogs.clear();  // 清空日志去重集合
     });
+    if (elements.clearBackendLogBtn) {
+        elements.clearBackendLogBtn.addEventListener('click', () => {
+            if (elements.backendConsoleLog) {
+                elements.backendConsoleLog.innerHTML = '<div class="log-line info">[系统] 后台日志已清空</div>';
+            }
+        });
+    }
+    if (elements.toggleBackendLogBtn) {
+        elements.toggleBackendLogBtn.addEventListener('click', toggleBackendLogPanel);
+    }
 
     // 刷新账号列表
     elements.refreshAccountsBtn.addEventListener('click', () => {
@@ -333,7 +349,13 @@ function initEventListeners() {
         defaultExpanded = localStorage.getItem('sub2api_scheduler_advanced_expanded') === '1';
     } catch (e) {}
     setSub2ApiSchedulerAdvancedExpanded(defaultExpanded);
+    let backendExpanded = true;
+    try {
+        backendExpanded = localStorage.getItem('backend_log_panel_expanded') !== '0';
+    } catch (e) {}
+    setBackendLogPanelExpanded(backendExpanded);
     startSystemLogPolling();
+    startBackendLogPolling();
 }
 
 // 加载可用的邮箱服务
@@ -865,7 +887,9 @@ function startSystemLogPolling() {
         try {
             const res = await api.get(`/sub2api-scheduler/logs?since_id=${lastSystemLogId}`);
             if (res && Array.isArray(res.logs) && res.logs.length > 0) {
-                res.logs.forEach(log => addLog(log.level || 'info', log.msg || ''));
+                res.logs.forEach(log => {
+                    addLog(log.level || 'info', log.msg || '');
+                });
                 lastSystemLogId = res.last_id;
             }
             await loadSub2ApiSchedulerStatus();
@@ -1531,6 +1555,96 @@ function addLog(type, message) {
     if (lines.length > 500) {
         lines[0].remove();
     }
+}
+
+function addBackendLog(type, message) {
+    if (!elements.backendConsoleLog) return;
+    const line = document.createElement('div');
+    line.className = `log-line ${type || 'info'}`;
+    line.textContent = message || '';
+    elements.backendConsoleLog.appendChild(line);
+    elements.backendConsoleLog.scrollTop = elements.backendConsoleLog.scrollHeight;
+
+    const lines = elements.backendConsoleLog.querySelectorAll('.log-line');
+    if (lines.length > 800) {
+        lines[0].remove();
+    }
+}
+
+function getBackendLogType(line) {
+    if (typeof line !== 'string') return 'info';
+    const lowerLine = line.toLowerCase();
+    if (lowerLine.includes('error') || lowerLine.includes('[error]') || lowerLine.includes('失败') || lowerLine.includes('错误')) {
+        return 'error';
+    }
+    if (lowerLine.includes('warning') || lowerLine.includes('[warning]') || lowerLine.includes('警告') || lowerLine.includes('限流')) {
+        return 'warning';
+    }
+    if (lowerLine.includes('success') || lowerLine.includes('[success]') || lowerLine.includes('完成') || lowerLine.includes('正常')) {
+        return 'success';
+    }
+    if (lowerLine.includes('debug') || lowerLine.includes('[debug]')) {
+        return 'debug';
+    }
+    return 'info';
+}
+
+function replaceBackendLogs(lines) {
+    if (!elements.backendConsoleLog) return;
+    elements.backendConsoleLog.innerHTML = '';
+    (lines || []).forEach(line => addBackendLog(getBackendLogType(line), line));
+}
+
+async function fetchBackendLogs() {
+    try {
+        const res = await api.get('/settings/logs?lines=400');
+        if (!res || !Array.isArray(res.logs)) return;
+
+        const totalLines = Number.isFinite(res.total_lines) ? res.total_lines : res.logs.length;
+        if (lastBackendLogTotalLines === null || totalLines < lastBackendLogTotalLines) {
+            // 初次加载，或日志文件轮转/重置时，直接重绘最近日志
+            replaceBackendLogs(res.logs);
+            lastBackendLogTotalLines = totalLines;
+            return;
+        }
+
+        const delta = totalLines - lastBackendLogTotalLines;
+        if (delta <= 0) return;
+
+        if (delta >= res.logs.length) {
+            // 增量超过当前窗口，直接重绘窗口，避免漏行
+            replaceBackendLogs(res.logs);
+        } else {
+            const newLines = res.logs.slice(-delta);
+            newLines.forEach(line => addBackendLog(getBackendLogType(line), line));
+        }
+
+        lastBackendLogTotalLines = totalLines;
+    } catch (error) {
+        console.error('轮询后端日志失败', error);
+    }
+}
+
+function startBackendLogPolling() {
+    if (backendLogPollingInterval) return;
+    fetchBackendLogs();
+    backendLogPollingInterval = setInterval(fetchBackendLogs, 5000);
+}
+
+function setBackendLogPanelExpanded(expanded) {
+    if (!elements.backendLogBody || !elements.toggleBackendLogBtn) return;
+    elements.backendLogBody.style.display = expanded ? 'block' : 'none';
+    elements.toggleBackendLogBtn.textContent = expanded ? '▾' : '▸';
+    elements.toggleBackendLogBtn.title = expanded ? '折叠' : '展开';
+    try {
+        localStorage.setItem('backend_log_panel_expanded', expanded ? '1' : '0');
+    } catch (e) {}
+}
+
+function toggleBackendLogPanel() {
+    if (!elements.backendLogBody) return;
+    const expanded = elements.backendLogBody.style.display !== 'none';
+    setBackendLogPanelExpanded(!expanded);
 }
 
 // 获取日志类型

@@ -521,6 +521,18 @@ body {
     font-size: 0.75rem;
 }
 
+.backend-log-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    font-size: 1.05rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
 .btn-lg {
     padding: 14px 28px;
     font-size: 1rem;
@@ -582,6 +594,16 @@ body {
     background: linear-gradient(180deg, #1a1b26 0%, transparent 100%);
     pointer-events: none;
     z-index: 1;
+}
+
+.backend-console-log {
+    height: 250px;
+    border-radius: 0;
+}
+
+/* 监控台与后台日志之间不留空白，把空间让给日志内容 */
+#console-card {
+    margin-bottom: 0;
 }
 
 .log-line {
