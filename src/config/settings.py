@@ -391,6 +391,42 @@ SETTING_DEFINITIONS: Dict[str, SettingDefinition] = {
         category=SettingCategory.SUB2API,
         description="Sub2API 自动补注册使用的邮箱服务"
     ),
+    "sub2api_auto_register_upload_enabled": SettingDefinition(
+        db_key="sub2api.auto_register_upload_enabled",
+        default_value=True,
+        category=SettingCategory.SUB2API,
+        description="自动补注册后是否上传到 Sub2API"
+    ),
+    "sub2api_auto_register_upload_service_ids": SettingDefinition(
+        db_key="sub2api.auto_register_upload_service_ids",
+        default_value=[],
+        category=SettingCategory.SUB2API,
+        description="自动补注册上传目标 Sub2API 服务 ID 列表"
+    ),
+    "sub2api_auto_register_mode": SettingDefinition(
+        db_key="sub2api.auto_register_mode",
+        default_value="parallel",
+        category=SettingCategory.SUB2API,
+        description="自动补注册并发模式（parallel/pipeline）"
+    ),
+    "sub2api_auto_register_concurrency": SettingDefinition(
+        db_key="sub2api.auto_register_concurrency",
+        default_value=3,
+        category=SettingCategory.SUB2API,
+        description="自动补注册并发数"
+    ),
+    "sub2api_auto_register_interval_min": SettingDefinition(
+        db_key="sub2api.auto_register_interval_min",
+        default_value=5,
+        category=SettingCategory.SUB2API,
+        description="自动补注册流水线最小间隔（秒）"
+    ),
+    "sub2api_auto_register_interval_max": SettingDefinition(
+        db_key="sub2api.auto_register_interval_max",
+        default_value=30,
+        category=SettingCategory.SUB2API,
+        description="自动补注册流水线最大间隔（秒）"
+    ),
 
     # 验证码配置
     "email_code_timeout": SettingDefinition(
@@ -461,6 +497,11 @@ SETTING_TYPES: Dict[str, Type] = {
     "sub2api_auto_register_threshold": int,
     "sub2api_auto_register_batch_count": int,
     "sub2api_auto_register_max_attempts": int,
+    "sub2api_auto_register_upload_enabled": bool,
+    "sub2api_auto_register_upload_service_ids": list,
+    "sub2api_auto_register_concurrency": int,
+    "sub2api_auto_register_interval_min": int,
+    "sub2api_auto_register_interval_max": int,
     "email_code_timeout": int,
     "email_code_poll_interval": int,
     "outlook_health_failure_threshold": int,
@@ -752,6 +793,12 @@ class Settings(BaseModel):
     sub2api_auto_register_batch_count: int = 5
     sub2api_auto_register_max_attempts: int = 10
     sub2api_auto_register_email_service: str = "tempmail:default"
+    sub2api_auto_register_upload_enabled: bool = True
+    sub2api_auto_register_upload_service_ids: list[int] = []
+    sub2api_auto_register_mode: str = "parallel"
+    sub2api_auto_register_concurrency: int = 3
+    sub2api_auto_register_interval_min: int = 5
+    sub2api_auto_register_interval_max: int = 30
 
     # 验证码配置
     email_code_timeout: int = 120

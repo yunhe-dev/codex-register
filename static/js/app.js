@@ -40,6 +40,12 @@ let lastSystemLogId = 0;
 let latestSub2ApiStatus = null;
 let currentSub2ApiCheckEnabled = false;
 let currentSub2ApiRegisterEnabled = false;
+let currentSub2ApiUploadEnabled = true;
+let currentSub2ApiUploadServiceIds = [];
+let currentSub2ApiRegisterMode = 'parallel';
+let currentSub2ApiRegisterConcurrency = 3;
+let currentSub2ApiRegisterIntervalMin = 5;
+let currentSub2ApiRegisterIntervalMax = 30;
 
 // DOM 元素
 const elements = {
@@ -108,6 +114,20 @@ const elements = {
     sub2apiRegisterBatchCount: document.getElementById('sub2api-register-batch-count'),
     sub2apiRegisterMaxAttempts: document.getElementById('sub2api-register-max-attempts'),
     sub2apiSchedulerEmailService: document.getElementById('sub2api-scheduler-email-service'),
+    sub2apiSchedulerAutoUploadSub2api: document.getElementById('sub2api-scheduler-auto-upload-sub2api'),
+    sub2apiSchedulerUploadServiceGroup: document.getElementById('sub2api-scheduler-upload-service-group'),
+    sub2apiSchedulerUploadService: document.getElementById('sub2api-scheduler-upload-service'),
+    sub2apiSchedulerAdvancedToggle: document.getElementById('sub2api-scheduler-advanced-toggle'),
+    sub2apiSchedulerAdvancedArrow: document.getElementById('sub2api-scheduler-advanced-arrow'),
+    sub2apiSchedulerAdvancedLabel: document.getElementById('sub2api-scheduler-advanced-label'),
+    sub2apiSchedulerAdvancedOptions: document.getElementById('sub2api-scheduler-advanced-options'),
+    sub2apiSchedulerRegMode: document.getElementById('sub2api-scheduler-reg-mode'),
+    sub2apiSchedulerConcurrencyMode: document.getElementById('sub2api-scheduler-concurrency-mode'),
+    sub2apiSchedulerConcurrencyCount: document.getElementById('sub2api-scheduler-concurrency-count'),
+    sub2apiSchedulerConcurrencyHint: document.getElementById('sub2api-scheduler-concurrency-hint'),
+    sub2apiSchedulerIntervalGroup: document.getElementById('sub2api-scheduler-interval-group'),
+    sub2apiSchedulerIntervalMin: document.getElementById('sub2api-scheduler-interval-min'),
+    sub2apiSchedulerIntervalMax: document.getElementById('sub2api-scheduler-interval-max'),
     sub2apiSaveConfigBtn: document.getElementById('sub2api-save-config-btn'),
     sub2apiStopTaskBtn: document.getElementById('sub2api-stop-task-btn'),
     sub2apiLastScanTime: document.getElementById('sub2api-last-scan-time'),
@@ -149,6 +169,7 @@ async function initAutoUploadOptions() {
         loadServiceSelect('/cpa-services?enabled=true', elements.cpaServiceSelect, elements.autoUploadCpa, elements.cpaServiceSelectGroup),
         loadServiceSelect('/sub2api-services?enabled=true', elements.sub2apiServiceSelect, elements.autoUploadSub2api, elements.sub2apiServiceSelectGroup),
         loadServiceSelect('/tm-services?enabled=true', elements.tmServiceSelect, elements.autoUploadTm, elements.tmServiceSelectGroup),
+        loadServiceSelect('/sub2api-services?enabled=true', elements.sub2apiSchedulerUploadService, elements.sub2apiSchedulerAutoUploadSub2api, elements.sub2apiSchedulerUploadServiceGroup),
     ]);
 }
 
@@ -221,6 +242,36 @@ function getSelectedServiceIds(container) {
     return Array.from(container.querySelectorAll('.msd-item input:checked')).map(cb => parseInt(cb.value));
 }
 
+function setSelectedServiceIds(container, ids, selectAllWhenEmpty = false) {
+    if (!container) return;
+    const checkboxes = container.querySelectorAll('.msd-item input');
+    if (!checkboxes.length) return;
+    const selectedSet = new Set((ids || []).map(v => String(v)));
+    const useAll = selectAllWhenEmpty && selectedSet.size === 0;
+    checkboxes.forEach(cb => {
+        cb.checked = useAll ? true : selectedSet.has(cb.value);
+    });
+    updateMsdLabel(container.id + '-dd');
+}
+
+function setSub2ApiSchedulerAdvancedExpanded(expanded) {
+    if (!elements.sub2apiSchedulerAdvancedOptions || !elements.sub2apiSchedulerAdvancedLabel) return;
+    elements.sub2apiSchedulerAdvancedOptions.style.display = expanded ? 'block' : 'none';
+    elements.sub2apiSchedulerAdvancedLabel.textContent = expanded ? '收起批量高级参数' : '展开批量高级参数';
+    if (elements.sub2apiSchedulerAdvancedArrow) {
+        elements.sub2apiSchedulerAdvancedArrow.textContent = expanded ? '▾' : '▸';
+    }
+    try {
+        localStorage.setItem('sub2api_scheduler_advanced_expanded', expanded ? '1' : '0');
+    } catch (e) {}
+}
+
+function toggleSub2ApiSchedulerAdvanced() {
+    if (!elements.sub2apiSchedulerAdvancedOptions) return;
+    const expanded = elements.sub2apiSchedulerAdvancedOptions.style.display !== 'none';
+    setSub2ApiSchedulerAdvancedExpanded(!expanded);
+}
+
 // 事件监听
 function initEventListeners() {
     // 注册表单提交
@@ -254,6 +305,15 @@ function initEventListeners() {
     elements.outlookConcurrencyMode.addEventListener('change', () => {
         handleConcurrencyModeChange(elements.outlookConcurrencyMode, elements.outlookConcurrencyHint, elements.outlookIntervalGroup);
     });
+    if (elements.sub2apiSchedulerConcurrencyMode) {
+        elements.sub2apiSchedulerConcurrencyMode.addEventListener('change', () => {
+            handleConcurrencyModeChange(
+                elements.sub2apiSchedulerConcurrencyMode,
+                elements.sub2apiSchedulerConcurrencyHint,
+                elements.sub2apiSchedulerIntervalGroup,
+            );
+        });
+    }
 
     if (elements.sub2apiSaveConfigBtn) {
         elements.sub2apiSaveConfigBtn.addEventListener('click', handleSaveSub2ApiSchedulerConfig);
@@ -264,7 +324,15 @@ function initEventListeners() {
     if (elements.sub2apiForceCheckBtn) {
         elements.sub2apiForceCheckBtn.addEventListener('click', handleForceCheckSub2Api);
     }
+    if (elements.sub2apiSchedulerAdvancedToggle) {
+        elements.sub2apiSchedulerAdvancedToggle.addEventListener('click', toggleSub2ApiSchedulerAdvanced);
+    }
 
+    let defaultExpanded = false;
+    try {
+        defaultExpanded = localStorage.getItem('sub2api_scheduler_advanced_expanded') === '1';
+    } catch (e) {}
+    setSub2ApiSchedulerAdvancedExpanded(defaultExpanded);
     startSystemLogPolling();
 }
 
@@ -475,11 +543,47 @@ async function loadSub2ApiSchedulerConfig() {
         const config = await api.get('/sub2api-scheduler/config');
         currentSub2ApiCheckEnabled = !!config.check_enabled;
         currentSub2ApiRegisterEnabled = !!config.register_enabled;
+        currentSub2ApiUploadEnabled = config.upload_enabled !== false;
+        currentSub2ApiUploadServiceIds = Array.isArray(config.upload_service_ids) ? config.upload_service_ids : [];
+        currentSub2ApiRegisterMode = (config.register_mode === 'pipeline' || config.register_mode === 'parallel')
+            ? config.register_mode
+            : 'parallel';
+        currentSub2ApiRegisterConcurrency = parseInt(config.register_concurrency) || 3;
+        currentSub2ApiRegisterIntervalMin = parseInt(config.register_interval_min);
+        if (Number.isNaN(currentSub2ApiRegisterIntervalMin)) currentSub2ApiRegisterIntervalMin = 5;
+        currentSub2ApiRegisterIntervalMax = parseInt(config.register_interval_max);
+        if (Number.isNaN(currentSub2ApiRegisterIntervalMax)) currentSub2ApiRegisterIntervalMax = 30;
+        currentSub2ApiRegisterIntervalMax = Math.max(currentSub2ApiRegisterIntervalMin, currentSub2ApiRegisterIntervalMax);
+
         elements.sub2apiCheckInterval.value = config.check_interval ?? 60;
         elements.sub2apiCheckSleep.value = config.check_sleep ?? 1;
         elements.sub2apiRegisterThreshold.value = config.register_threshold ?? 10;
         elements.sub2apiRegisterBatchCount.value = config.register_batch_count ?? 5;
         elements.sub2apiRegisterMaxAttempts.value = config.register_max_attempts ?? 10;
+        if (elements.sub2apiSchedulerAutoUploadSub2api) {
+            elements.sub2apiSchedulerAutoUploadSub2api.checked = currentSub2ApiUploadEnabled;
+        }
+        if (elements.sub2apiSchedulerUploadServiceGroup) {
+            elements.sub2apiSchedulerUploadServiceGroup.style.display = currentSub2ApiUploadEnabled ? 'block' : 'none';
+        }
+        setSelectedServiceIds(elements.sub2apiSchedulerUploadService, currentSub2ApiUploadServiceIds, true);
+        if (elements.sub2apiSchedulerConcurrencyMode) {
+            elements.sub2apiSchedulerConcurrencyMode.value = currentSub2ApiRegisterMode;
+            handleConcurrencyModeChange(
+                elements.sub2apiSchedulerConcurrencyMode,
+                elements.sub2apiSchedulerConcurrencyHint,
+                elements.sub2apiSchedulerIntervalGroup,
+            );
+        }
+        if (elements.sub2apiSchedulerConcurrencyCount) {
+            elements.sub2apiSchedulerConcurrencyCount.value = currentSub2ApiRegisterConcurrency;
+        }
+        if (elements.sub2apiSchedulerIntervalMin) {
+            elements.sub2apiSchedulerIntervalMin.value = currentSub2ApiRegisterIntervalMin;
+        }
+        if (elements.sub2apiSchedulerIntervalMax) {
+            elements.sub2apiSchedulerIntervalMax.value = currentSub2ApiRegisterIntervalMax;
+        }
         populateSub2ApiSchedulerEmailServiceOptions(config.email_service || 'tempmail:default');
         updateSub2ApiSchedulerBadge(currentSub2ApiCheckEnabled);
     } catch (error) {
@@ -604,6 +708,22 @@ async function loadSub2ApiSchedulerStatus() {
 async function handleSaveSub2ApiSchedulerConfig() {
     elements.sub2apiSaveConfigBtn.disabled = true;
     elements.sub2apiSaveConfigBtn.textContent = '保存中...';
+    currentSub2ApiUploadEnabled = elements.sub2apiSchedulerAutoUploadSub2api
+        ? elements.sub2apiSchedulerAutoUploadSub2api.checked
+        : true;
+    currentSub2ApiUploadServiceIds = currentSub2ApiUploadEnabled
+        ? getSelectedServiceIds(elements.sub2apiSchedulerUploadService)
+        : [];
+    currentSub2ApiRegisterMode = elements.sub2apiSchedulerConcurrencyMode
+        ? elements.sub2apiSchedulerConcurrencyMode.value
+        : 'parallel';
+    if (currentSub2ApiRegisterMode !== 'pipeline') currentSub2ApiRegisterMode = 'parallel';
+    currentSub2ApiRegisterConcurrency = Math.max(1, parseInt(elements.sub2apiSchedulerConcurrencyCount?.value) || 3);
+    currentSub2ApiRegisterIntervalMin = Math.max(0, parseInt(elements.sub2apiSchedulerIntervalMin?.value) || 5);
+    currentSub2ApiRegisterIntervalMax = Math.max(
+        currentSub2ApiRegisterIntervalMin,
+        parseInt(elements.sub2apiSchedulerIntervalMax?.value) || 30,
+    );
 
     try {
         await api.post('/sub2api-scheduler/config', {
@@ -615,6 +735,12 @@ async function handleSaveSub2ApiSchedulerConfig() {
             register_batch_count: parseInt(elements.sub2apiRegisterBatchCount.value) || 5,
             register_max_attempts: parseInt(elements.sub2apiRegisterMaxAttempts.value) || 10,
             email_service: elements.sub2apiSchedulerEmailService ? elements.sub2apiSchedulerEmailService.value : 'tempmail:default',
+            upload_enabled: currentSub2ApiUploadEnabled,
+            upload_service_ids: currentSub2ApiUploadServiceIds,
+            register_mode: currentSub2ApiRegisterMode,
+            register_concurrency: currentSub2ApiRegisterConcurrency,
+            register_interval_min: currentSub2ApiRegisterIntervalMin,
+            register_interval_max: currentSub2ApiRegisterIntervalMax,
         });
         updateSub2ApiSchedulerBadge(currentSub2ApiCheckEnabled);
         await loadSub2ApiSchedulerStatus();
@@ -633,6 +759,22 @@ async function handleStopSub2ApiSchedulerTask() {
     elements.sub2apiStopTaskBtn.disabled = true;
     const nextCheckEnabled = !currentSub2ApiCheckEnabled;
     const nextRegisterEnabled = nextCheckEnabled ? true : false;
+    currentSub2ApiUploadEnabled = elements.sub2apiSchedulerAutoUploadSub2api
+        ? elements.sub2apiSchedulerAutoUploadSub2api.checked
+        : true;
+    currentSub2ApiUploadServiceIds = currentSub2ApiUploadEnabled
+        ? getSelectedServiceIds(elements.sub2apiSchedulerUploadService)
+        : [];
+    currentSub2ApiRegisterMode = elements.sub2apiSchedulerConcurrencyMode
+        ? elements.sub2apiSchedulerConcurrencyMode.value
+        : 'parallel';
+    if (currentSub2ApiRegisterMode !== 'pipeline') currentSub2ApiRegisterMode = 'parallel';
+    currentSub2ApiRegisterConcurrency = Math.max(1, parseInt(elements.sub2apiSchedulerConcurrencyCount?.value) || 3);
+    currentSub2ApiRegisterIntervalMin = Math.max(0, parseInt(elements.sub2apiSchedulerIntervalMin?.value) || 5);
+    currentSub2ApiRegisterIntervalMax = Math.max(
+        currentSub2ApiRegisterIntervalMin,
+        parseInt(elements.sub2apiSchedulerIntervalMax?.value) || 30,
+    );
 
     try {
         await api.post('/sub2api-scheduler/config', {
@@ -644,6 +786,12 @@ async function handleStopSub2ApiSchedulerTask() {
             register_batch_count: parseInt(elements.sub2apiRegisterBatchCount.value) || 5,
             register_max_attempts: parseInt(elements.sub2apiRegisterMaxAttempts.value) || 10,
             email_service: elements.sub2apiSchedulerEmailService ? elements.sub2apiSchedulerEmailService.value : 'tempmail:default',
+            upload_enabled: currentSub2ApiUploadEnabled,
+            upload_service_ids: currentSub2ApiUploadServiceIds,
+            register_mode: currentSub2ApiRegisterMode,
+            register_concurrency: currentSub2ApiRegisterConcurrency,
+            register_interval_min: currentSub2ApiRegisterIntervalMin,
+            register_interval_max: currentSub2ApiRegisterIntervalMax,
         });
         currentSub2ApiCheckEnabled = nextCheckEnabled;
         currentSub2ApiRegisterEnabled = nextRegisterEnabled;

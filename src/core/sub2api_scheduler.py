@@ -161,12 +161,47 @@ async def trigger_auto_registration(count: int, sub2api_service_id: int, current
     try:
         settings = get_settings()
         email_service_type, email_service_id = _resolve_auto_register_email_service()
+        upload_enabled = bool(getattr(settings, "sub2api_auto_register_upload_enabled", True))
+        raw_upload_service_ids = getattr(settings, "sub2api_auto_register_upload_service_ids", []) or []
+        if isinstance(raw_upload_service_ids, (int, str)):
+            raw_upload_service_ids = [raw_upload_service_ids]
+        selected_upload_service_ids = []
+        for service_id in raw_upload_service_ids:
+            try:
+                parsed_id = int(service_id)
+            except (TypeError, ValueError):
+                continue
+            if parsed_id > 0:
+                selected_upload_service_ids.append(parsed_id)
+        if not selected_upload_service_ids:
+            selected_upload_service_ids = [sub2api_service_id]
+
+        register_mode = str(getattr(settings, "sub2api_auto_register_mode", "parallel") or "parallel").lower()
+        if register_mode not in ("parallel", "pipeline"):
+            register_mode = "parallel"
+            append_system_log("warning", "自动补注册并发模式非法，已回退为 parallel")
+        register_concurrency = max(1, min(50, int(getattr(settings, "sub2api_auto_register_concurrency", AUTO_REGISTER_BATCH_CONCURRENCY) or AUTO_REGISTER_BATCH_CONCURRENCY)))
+        register_interval_min = max(0, int(getattr(settings, "sub2api_auto_register_interval_min", settings.registration_sleep_min) or settings.registration_sleep_min))
+        register_interval_max = max(register_interval_min, int(getattr(settings, "sub2api_auto_register_interval_max", settings.registration_sleep_max) or settings.registration_sleep_max))
+
+        upload_service_ids = []
+        if upload_enabled:
+            with get_db() as db:
+                enabled_services = crud.get_sub2api_services(db, enabled=True)
+                enabled_service_ids = {svc.id for svc in enabled_services}
+            upload_service_ids = [sid for sid in selected_upload_service_ids if sid in enabled_service_ids]
+            if not upload_service_ids and sub2api_service_id in enabled_service_ids:
+                upload_service_ids = [sub2api_service_id]
+            if not upload_service_ids:
+                append_system_log("warning", "自动补注册上传目标服务不可用，已跳过自动上传")
+                upload_enabled = False
+
         target_success_count = count
         remaining_to_create = count
         total_success_count = 0
         total_created_count = 0
         round_index = 0
-        max_attempts = max(1, int(settings.sub2api_auto_register_max_attempts or 1))
+        max_attempts = max(1, int(getattr(settings, "sub2api_auto_register_max_attempts", 1) or 1))
 
         _update_scheduler_state(
             last_replenish_started_at=datetime.utcnow().isoformat(),
@@ -227,12 +262,12 @@ async def trigger_auto_registration(count: int, sub2api_service_id: int, current
                 proxy=None,
                 email_service_config=None,
                 email_service_id=email_service_id,
-                interval_min=settings.registration_sleep_min,
-                interval_max=settings.registration_sleep_max,
-                concurrency=AUTO_REGISTER_BATCH_CONCURRENCY,
-                mode=AUTO_REGISTER_BATCH_MODE,
-                auto_upload_sub2api=True,
-                sub2api_service_ids=[sub2api_service_id],
+                interval_min=register_interval_min,
+                interval_max=register_interval_max,
+                concurrency=register_concurrency,
+                mode=register_mode,
+                auto_upload_sub2api=upload_enabled,
+                sub2api_service_ids=upload_service_ids,
             )
 
             round_success_count = 0

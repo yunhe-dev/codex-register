@@ -54,6 +54,12 @@ def test_sub2api_scheduler_config_round_trip(monkeypatch, tmp_path):
             "register_batch_count": 3,
             "register_max_attempts": 10,
             "email_service": "temp_mail:12",
+            "upload_enabled": True,
+            "upload_service_ids": [],
+            "register_mode": "parallel",
+            "register_concurrency": 3,
+            "register_interval_min": 5,
+            "register_interval_max": 30,
         }
 
 

@@ -3,6 +3,7 @@ Sub2API 自动维护调度配置 API。
 """
 
 import asyncio
+import logging
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -10,6 +11,7 @@ from pydantic import BaseModel
 from ...config.settings import get_settings, update_settings
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class Sub2ApiSchedulerConfig(BaseModel):
@@ -21,6 +23,12 @@ class Sub2ApiSchedulerConfig(BaseModel):
     register_batch_count: int
     register_max_attempts: int
     email_service: str
+    upload_enabled: bool = True
+    upload_service_ids: list[int] = []
+    register_mode: str = "parallel"
+    register_concurrency: int = 3
+    register_interval_min: int = 5
+    register_interval_max: int = 30
 
 
 @router.get("/config")
@@ -35,6 +43,12 @@ async def get_sub2api_scheduler_config():
         "register_batch_count": settings.sub2api_auto_register_batch_count,
         "register_max_attempts": settings.sub2api_auto_register_max_attempts,
         "email_service": settings.sub2api_auto_register_email_service,
+        "upload_enabled": settings.sub2api_auto_register_upload_enabled,
+        "upload_service_ids": settings.sub2api_auto_register_upload_service_ids,
+        "register_mode": settings.sub2api_auto_register_mode,
+        "register_concurrency": settings.sub2api_auto_register_concurrency,
+        "register_interval_min": settings.sub2api_auto_register_interval_min,
+        "register_interval_max": settings.sub2api_auto_register_interval_max,
     }
 
 
@@ -64,6 +78,13 @@ async def get_sub2api_scheduler_status():
 async def update_sub2api_scheduler_config(request: Sub2ApiSchedulerConfig):
     settings = get_settings()
     was_check_enabled = bool(settings.sub2api_auto_check_enabled)
+    register_mode = (request.register_mode or "parallel").strip().lower()
+    if register_mode not in ("parallel", "pipeline"):
+        logger.warning("非法自动补注册并发模式 %s，已回退为 parallel", request.register_mode)
+        register_mode = "parallel"
+    register_concurrency = max(1, min(50, int(request.register_concurrency or 3)))
+    interval_min = max(0, int(request.register_interval_min or 5))
+    interval_max = max(interval_min, int(request.register_interval_max or 30))
 
     update_settings(
         sub2api_auto_check_enabled=request.check_enabled,
@@ -74,6 +95,12 @@ async def update_sub2api_scheduler_config(request: Sub2ApiSchedulerConfig):
         sub2api_auto_register_batch_count=request.register_batch_count,
         sub2api_auto_register_max_attempts=request.register_max_attempts,
         sub2api_auto_register_email_service=request.email_service,
+        sub2api_auto_register_upload_enabled=request.upload_enabled,
+        sub2api_auto_register_upload_service_ids=request.upload_service_ids,
+        sub2api_auto_register_mode=register_mode,
+        sub2api_auto_register_concurrency=register_concurrency,
+        sub2api_auto_register_interval_min=interval_min,
+        sub2api_auto_register_interval_max=interval_max,
     )
 
     from ...core.sub2api_scheduler import (

@@ -216,6 +216,54 @@
                                             <select id="sub2api-scheduler-email-service" style="padding: 4px 8px; font-size: 0.8rem;"></select>
                                         </div>
                                     </div>
+                                    <div style="margin-top: 6px; padding-left: 24px;">
+                                        <div class="form-group">
+                                            <label style="font-weight: 500; margin-bottom: var(--spacing-xs); display: block;">注册后自动操作</label>
+                                            <label style="display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer;">
+                                                <input type="checkbox" id="sub2api-scheduler-auto-upload-sub2api" checked>
+                                                <span>上传到 Sub2API</span>
+                                            </label>
+                                            <div id="sub2api-scheduler-upload-service-group" style="margin-top: 6px; padding-left: 4px;">
+                                                <div class="multi-select-dropdown" id="sub2api-scheduler-upload-service"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style="margin-top: 4px; padding-left: 24px;">
+                                        <div id="sub2api-scheduler-advanced-toggle" style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-secondary); font-size: 0.82rem; user-select: none;">
+                                            <span id="sub2api-scheduler-advanced-arrow" style="font-size: 1rem; font-weight: 700; line-height: 1;">▸</span>
+                                            <span id="sub2api-scheduler-advanced-label">展开批量高级参数</span>
+                                        </div>
+                                    </div>
+                                    <div id="sub2api-scheduler-advanced-options" style="display:none; margin-top: 8px; padding-left: 24px;">
+                                        <div class="form-group">
+                                            <label for="sub2api-scheduler-reg-mode" style="font-size: 0.8rem; color: var(--text-muted);">注册模式</label>
+                                            <select id="sub2api-scheduler-reg-mode" style="padding: 4px 8px; font-size: 0.8rem;">
+                                                <option value="batch" selected>批量注册</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="sub2api-scheduler-concurrency-mode" style="font-size: 0.8rem; color: var(--text-muted);">并发模式</label>
+                                            <select id="sub2api-scheduler-concurrency-mode" style="padding: 4px 8px; font-size: 0.8rem;">
+                                                <option value="parallel" selected>并行（Parallel）</option>
+                                                <option value="pipeline">流水线（Pipeline）</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="sub2api-scheduler-concurrency-count" style="font-size: 0.8rem; color: var(--text-muted);">并发数 (1-50)</label>
+                                            <input type="number" id="sub2api-scheduler-concurrency-count" min="1" max="50" value="3" style="padding: 4px 8px; font-size: 0.8rem;">
+                                            <small id="sub2api-scheduler-concurrency-hint" style="color: var(--text-muted); font-size: 0.75rem;">所有任务分成 N 个并发批次同时执行</small>
+                                        </div>
+                                        <div id="sub2api-scheduler-interval-group" style="display:none;">
+                                            <div class="form-group">
+                                                <label for="sub2api-scheduler-interval-min" style="font-size: 0.8rem; color: var(--text-muted);">最小间隔 (秒)</label>
+                                                <input type="number" id="sub2api-scheduler-interval-min" min="0" max="300" value="5" style="padding: 4px 8px; font-size: 0.8rem;">
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="sub2api-scheduler-interval-max" style="font-size: 0.8rem; color: var(--text-muted);">最大间隔 (秒)</label>
+                                                <input type="number" id="sub2api-scheduler-interval-max" min="1" max="600" value="30" style="padding: 4px 8px; font-size: 0.8rem;">
+                                            </div>
+                                        </div>
+                                    </div>
                                     <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px; width: 100%;">
                                         <button type="button" class="btn btn-secondary btn-lg" id="sub2api-save-config-btn" style="width: 100%;">保存并应用配置</button>
                                         <button type="button" class="btn btn-primary btn-lg" id="sub2api-stop-task-btn" style="width: 100%;">开始自动任务</button>
