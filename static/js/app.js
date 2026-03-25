@@ -37,6 +37,9 @@ let activeTaskUuid = null;   // 当前活跃的单任务 UUID（用于页面重�
 let activeBatchId = null;    // 当前活跃的批量任务 ID（用于页面重新可见时重连）
 let systemLogPollingInterval = null;
 let lastSystemLogId = 0;
+let latestSub2ApiStatus = null;
+let currentSub2ApiCheckEnabled = false;
+let currentSub2ApiRegisterEnabled = false;
 
 // DOM 元素
 const elements = {
@@ -99,10 +102,8 @@ const elements = {
     // Sub2API 自动维护
     sub2apiSchedulerStatusBadge: document.getElementById('sub2api-scheduler-status-badge'),
     sub2apiForceCheckBtn: document.getElementById('sub2api-force-check-btn'),
-    sub2apiAutoCheckEnabled: document.getElementById('sub2api-auto-check-enabled'),
     sub2apiCheckInterval: document.getElementById('sub2api-check-interval'),
     sub2apiCheckSleep: document.getElementById('sub2api-check-sleep'),
-    sub2apiAutoRegisterEnabled: document.getElementById('sub2api-auto-register-enabled'),
     sub2apiRegisterThreshold: document.getElementById('sub2api-register-threshold'),
     sub2apiRegisterBatchCount: document.getElementById('sub2api-register-batch-count'),
     sub2apiRegisterMaxAttempts: document.getElementById('sub2api-register-max-attempts'),
@@ -110,6 +111,7 @@ const elements = {
     sub2apiSaveConfigBtn: document.getElementById('sub2api-save-config-btn'),
     sub2apiStopTaskBtn: document.getElementById('sub2api-stop-task-btn'),
     sub2apiLastScanTime: document.getElementById('sub2api-last-scan-time'),
+    sub2apiNextScanTime: document.getElementById('sub2api-next-scan-time'),
     sub2apiLastScanStatus: document.getElementById('sub2api-last-scan-status'),
     sub2apiAccountsScanned: document.getElementById('sub2api-accounts-scanned'),
     sub2apiAccountsHealthy: document.getElementById('sub2api-accounts-healthy'),
@@ -467,19 +469,19 @@ function populateSub2ApiSchedulerEmailServiceOptions(selectedValue = '') {
 }
 
 async function loadSub2ApiSchedulerConfig() {
-    if (!elements.sub2apiAutoCheckEnabled) return;
+    if (!elements.sub2apiCheckInterval) return;
 
     try {
         const config = await api.get('/sub2api-scheduler/config');
-        elements.sub2apiAutoCheckEnabled.checked = !!config.check_enabled;
+        currentSub2ApiCheckEnabled = !!config.check_enabled;
+        currentSub2ApiRegisterEnabled = !!config.register_enabled;
         elements.sub2apiCheckInterval.value = config.check_interval ?? 60;
         elements.sub2apiCheckSleep.value = config.check_sleep ?? 1;
-        elements.sub2apiAutoRegisterEnabled.checked = !!config.register_enabled;
         elements.sub2apiRegisterThreshold.value = config.register_threshold ?? 10;
         elements.sub2apiRegisterBatchCount.value = config.register_batch_count ?? 5;
         elements.sub2apiRegisterMaxAttempts.value = config.register_max_attempts ?? 10;
         populateSub2ApiSchedulerEmailServiceOptions(config.email_service || 'tempmail:default');
-        updateSub2ApiSchedulerBadge(!!config.check_enabled);
+        updateSub2ApiSchedulerBadge(currentSub2ApiCheckEnabled);
     } catch (error) {
         console.error('加载 Sub2API 调度配置失败', error);
         addLog('warning', '[警告] 加载 Sub2API 自动维护配置失败');
@@ -502,8 +504,35 @@ function formatDateTime(value) {
 
 function updateSub2ApiSchedulerSummary(status) {
     if (!status) return;
+    latestSub2ApiStatus = status;
+    currentSub2ApiCheckEnabled = !!status.check_enabled;
+    if (elements.sub2apiForceCheckBtn) {
+        const isRunning = !!status.is_running;
+        elements.sub2apiForceCheckBtn.textContent = isRunning ? '停止扫描' : '立即扫描';
+        elements.sub2apiForceCheckBtn.classList.toggle('btn-primary', !isRunning);
+        elements.sub2apiForceCheckBtn.classList.toggle('btn-danger', isRunning);
+    }
+    if (elements.sub2apiStopTaskBtn) {
+        const isEnabled = !!status.check_enabled;
+        elements.sub2apiStopTaskBtn.textContent = isEnabled ? '停止自动任务' : '开始自动任务';
+        elements.sub2apiStopTaskBtn.classList.toggle('btn-primary', !isEnabled);
+        elements.sub2apiStopTaskBtn.classList.toggle('btn-danger', isEnabled);
+    }
     if (elements.sub2apiLastScanTime) {
         elements.sub2apiLastScanTime.textContent = formatDateTime(status.last_scan_finished_at || status.last_scan_started_at);
+    }
+    if (elements.sub2apiNextScanTime) {
+        let nextScanText = '-';
+        if (status.check_enabled) {
+            if (status.next_scan_scheduled_at) {
+                nextScanText = formatDateTime(status.next_scan_scheduled_at);
+            } else if (status.is_running) {
+                nextScanText = '待本轮完成';
+            } else {
+                nextScanText = '等待调度';
+            }
+        }
+        elements.sub2apiNextScanTime.textContent = nextScanText;
     }
     if (elements.sub2apiLastScanStatus) {
         const statusMap = {
@@ -578,16 +607,17 @@ async function handleSaveSub2ApiSchedulerConfig() {
 
     try {
         await api.post('/sub2api-scheduler/config', {
-            check_enabled: elements.sub2apiAutoCheckEnabled.checked,
+            check_enabled: currentSub2ApiCheckEnabled,
             check_interval: parseInt(elements.sub2apiCheckInterval.value) || 60,
             check_sleep: parseInt(elements.sub2apiCheckSleep.value) || 0,
-            register_enabled: elements.sub2apiAutoRegisterEnabled.checked,
+            register_enabled: currentSub2ApiRegisterEnabled,
             register_threshold: parseInt(elements.sub2apiRegisterThreshold.value) || 10,
             register_batch_count: parseInt(elements.sub2apiRegisterBatchCount.value) || 5,
             register_max_attempts: parseInt(elements.sub2apiRegisterMaxAttempts.value) || 10,
             email_service: elements.sub2apiSchedulerEmailService ? elements.sub2apiSchedulerEmailService.value : 'tempmail:default',
         });
-        updateSub2ApiSchedulerBadge(elements.sub2apiAutoCheckEnabled.checked);
+        updateSub2ApiSchedulerBadge(currentSub2ApiCheckEnabled);
+        await loadSub2ApiSchedulerStatus();
         toast.success('Sub2API 自动维护配置已保存');
         addLog('success', '[系统] Sub2API 自动维护与补注册配置已保存');
     } catch (error) {
@@ -601,26 +631,34 @@ async function handleSaveSub2ApiSchedulerConfig() {
 
 async function handleStopSub2ApiSchedulerTask() {
     elements.sub2apiStopTaskBtn.disabled = true;
-    elements.sub2apiAutoCheckEnabled.checked = false;
-    elements.sub2apiAutoRegisterEnabled.checked = false;
+    const nextCheckEnabled = !currentSub2ApiCheckEnabled;
+    const nextRegisterEnabled = nextCheckEnabled ? true : false;
 
     try {
         await api.post('/sub2api-scheduler/config', {
-            check_enabled: false,
+            check_enabled: nextCheckEnabled,
             check_interval: parseInt(elements.sub2apiCheckInterval.value) || 60,
             check_sleep: parseInt(elements.sub2apiCheckSleep.value) || 0,
-            register_enabled: false,
+            register_enabled: nextRegisterEnabled,
             register_threshold: parseInt(elements.sub2apiRegisterThreshold.value) || 10,
             register_batch_count: parseInt(elements.sub2apiRegisterBatchCount.value) || 5,
             register_max_attempts: parseInt(elements.sub2apiRegisterMaxAttempts.value) || 10,
             email_service: elements.sub2apiSchedulerEmailService ? elements.sub2apiSchedulerEmailService.value : 'tempmail:default',
         });
-        updateSub2ApiSchedulerBadge(false);
-        toast.info('已停止 Sub2API 自动任务');
-        addLog('warning', '[系统] 已手动停止 Sub2API 自动维护与补注册');
+        currentSub2ApiCheckEnabled = nextCheckEnabled;
+        currentSub2ApiRegisterEnabled = nextRegisterEnabled;
+        updateSub2ApiSchedulerBadge(nextCheckEnabled);
+        await loadSub2ApiSchedulerStatus();
+        if (nextCheckEnabled) {
+            toast.success('已开始自动任务');
+            addLog('success', '[系统] 已开启 Sub2API 自动维护与补注册');
+        } else {
+            toast.info('已停止 Sub2API 自动任务');
+            addLog('warning', '[系统] 已关闭 Sub2API 自动维护与补注册');
+        }
     } catch (error) {
-        toast.error(`停止失败: ${error.message}`);
-        addLog('error', `[错误] 停止 Sub2API 自动任务失败: ${error.message}`);
+        toast.error(`切换失败: ${error.message}`);
+        addLog('error', `[错误] 切换 Sub2API 自动任务失败: ${error.message}`);
     } finally {
         elements.sub2apiStopTaskBtn.disabled = false;
     }
@@ -628,28 +666,30 @@ async function handleStopSub2ApiSchedulerTask() {
 
 async function handleForceCheckSub2Api() {
     elements.sub2apiForceCheckBtn.disabled = true;
-    addLog('info', '[系统] 正在触发 Sub2API 立即巡检...');
+    const isRunning = !!(latestSub2ApiStatus && latestSub2ApiStatus.is_running);
 
     try {
-        const res = await api.post('/sub2api-scheduler/trigger');
-        if (Array.isArray(res.logs) && res.logs.length > 0) {
-            res.logs.forEach(message => {
-                let level = 'info';
-                if (message.includes('[WARNING]')) level = 'warning';
-                if (message.includes('[ERROR]')) level = 'error';
-                addLog(level, message);
-            });
-        }
-
-        if (res.success) {
-            toast.success(res.message || 'Sub2API 巡检执行完毕');
+        if (isRunning) {
+            const res = await api.post('/sub2api-scheduler/stop-scan');
+            if (res.success) {
+                toast.info(res.message || '已请求停止扫描');
+                addLog('warning', '[系统] 已请求停止当前 Sub2API 扫描');
+            } else {
+                toast.warning(res.message || '当前没有进行中的扫描任务');
+            }
         } else {
-            toast.error(res.message || 'Sub2API 巡检执行失败');
+            addLog('info', '[系统] 正在启动 Sub2API 扫描...');
+            const res = await api.post('/sub2api-scheduler/trigger');
+            if (res.success) {
+                toast.success(res.message || '已开始扫描');
+            } else {
+                toast.warning(res.message || '当前已有扫描任务在运行');
+            }
         }
         await loadSub2ApiSchedulerStatus();
     } catch (error) {
-        toast.error(`触发失败: ${error.message}`);
-        addLog('error', `[错误] 触发 Sub2API 巡检失败: ${error.message}`);
+        toast.error(`操作失败: ${error.message}`);
+        addLog('error', `[错误] Sub2API 扫描操作失败: ${error.message}`);
     } finally {
         elements.sub2apiForceCheckBtn.disabled = false;
     }

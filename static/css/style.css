@@ -349,12 +349,46 @@ body {
     gap: var(--spacing-md);
 }
 
+.form-section + .form-section {
+    margin-top: var(--spacing-xl);
+}
+
+.form-panel {
+    padding: var(--spacing-lg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: linear-gradient(180deg, var(--surface) 0%, var(--background) 100%);
+    box-shadow: var(--shadow-sm);
+}
+
+.form-panel:hover {
+    box-shadow: var(--shadow);
+}
+
+.form-section-header {
+    margin-bottom: var(--spacing-md);
+}
+
+.form-section-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: -0.01em;
+}
+
+.form-section-desc {
+    margin-top: 2px;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
 .form-actions {
     display: flex;
     gap: var(--spacing-sm);
     margin-top: var(--spacing-lg);
     padding-top: var(--spacing-lg);
-    border-top: 1px solid var(--border-light);
+    border-top: 1px solid var(--border);
 }
 
 /* Checkbox 样式优化 */
@@ -423,6 +457,20 @@ body {
 .btn-danger:hover:not(:disabled) {
     background: var(--danger-hover);
     transform: translateY(-1px);
+}
+
+#sub2api-stop-task-btn:disabled {
+    background: #e5e7eb;
+    color: #9ca3af;
+    border: 1px solid #d1d5db;
+    opacity: 1;
+    box-shadow: none;
+}
+
+[data-theme="dark"] #sub2api-stop-task-btn:disabled {
+    background: #334155;
+    color: #64748b;
+    border-color: #475569;
 }
 
 .btn-warning {

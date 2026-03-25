@@ -93,3 +93,28 @@ def test_sub2api_scheduler_stop_request_persists_disabled_flags(monkeypatch, tmp
         saved = client.get("/api/sub2api-scheduler/config").json()
         assert saved["check_enabled"] is False
         assert saved["register_enabled"] is False
+
+
+def test_sub2api_scheduler_status_includes_check_enabled(monkeypatch, tmp_path):
+    client = _build_test_client(monkeypatch, tmp_path)
+
+    with client:
+        client.post(
+            "/api/sub2api-scheduler/config",
+            json={
+                "check_enabled": True,
+                "check_interval": 20,
+                "check_sleep": 1,
+                "register_enabled": False,
+                "register_threshold": 10,
+                "register_batch_count": 5,
+                "register_max_attempts": 10,
+                "email_service": "tempmail:default",
+            },
+        )
+
+        status = client.get("/api/sub2api-scheduler/status")
+        assert status.status_code == 200
+        payload = status.json()
+        assert payload["success"] is True
+        assert payload["status"]["check_enabled"] is True

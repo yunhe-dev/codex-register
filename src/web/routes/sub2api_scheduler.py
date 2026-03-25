@@ -4,7 +4,7 @@ Sub2API 自动维护调度配置 API。
 
 import asyncio
 
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter
 from pydantic import BaseModel
 
 from ...config.settings import get_settings, update_settings
@@ -54,11 +54,17 @@ async def get_sub2api_system_logs(since_id: int = 0):
 async def get_sub2api_scheduler_status():
     from ...core.sub2api_scheduler import get_scheduler_status_snapshot
 
-    return {"success": True, "status": get_scheduler_status_snapshot()}
+    settings = get_settings()
+    status = get_scheduler_status_snapshot()
+    status["check_enabled"] = settings.sub2api_auto_check_enabled
+    return {"success": True, "status": status}
 
 
 @router.post("/config")
-async def update_sub2api_scheduler_config(request: Sub2ApiSchedulerConfig, background_tasks: BackgroundTasks):
+async def update_sub2api_scheduler_config(request: Sub2ApiSchedulerConfig):
+    settings = get_settings()
+    was_check_enabled = bool(settings.sub2api_auto_check_enabled)
+
     update_settings(
         sub2api_auto_check_enabled=request.check_enabled,
         sub2api_auto_check_interval=request.check_interval,
@@ -70,23 +76,52 @@ async def update_sub2api_scheduler_config(request: Sub2ApiSchedulerConfig, backg
         sub2api_auto_register_email_service=request.email_service,
     )
 
-    if request.check_enabled:
-        from ...core.sub2api_scheduler import check_sub2api_services_job
+    from ...core.sub2api_scheduler import (
+        check_sub2api_services_job,
+        clear_stop_current_scan_request,
+        notify_sub2api_scheduler_config_changed,
+        request_stop_current_scan,
+        start_sub2api_scheduler,
+    )
 
-        loop = asyncio.get_event_loop()
-        background_tasks.add_task(loop.run_in_executor, None, check_sub2api_services_job, loop, None)
+    loop = asyncio.get_event_loop()
+    if not request.check_enabled:
+        request_stop_current_scan()
+    else:
+        clear_stop_current_scan_request()
+        if not was_check_enabled:
+            loop.run_in_executor(None, check_sub2api_services_job, loop, None)
+
+    start_sub2api_scheduler()
+    notify_sub2api_scheduler_config_changed()
 
     return {"success": True, "message": "Sub2API 自动维护配置已保存"}
 
 
 @router.post("/trigger")
 async def trigger_sub2api_scheduler_check():
-    from ...core.sub2api_scheduler import check_sub2api_services_job
+    from ...core.sub2api_scheduler import (
+        check_sub2api_services_job,
+        get_scheduler_status_snapshot,
+    )
 
-    manual_logs = []
+    if get_scheduler_status_snapshot().get("is_running"):
+        return {"success": False, "message": "当前已有扫描任务在运行"}
+
     loop = asyncio.get_event_loop()
-    try:
-        await loop.run_in_executor(None, check_sub2api_services_job, loop, manual_logs)
-        return {"success": True, "logs": manual_logs, "message": "Sub2API 巡检执行完毕"}
-    except Exception as exc:
-        return {"success": False, "logs": manual_logs, "message": str(exc)}
+    loop.run_in_executor(None, check_sub2api_services_job, loop, [])
+    return {"success": True, "message": "已开始扫描"}
+
+
+@router.post("/stop-scan")
+async def stop_sub2api_scan():
+    from ...core.sub2api_scheduler import (
+        get_scheduler_status_snapshot,
+        request_stop_current_scan,
+    )
+
+    if not get_scheduler_status_snapshot().get("is_running"):
+        return {"success": False, "message": "当前没有进行中的扫描任务"}
+
+    request_stop_current_scan()
+    return {"success": True, "message": "已请求停止扫描"}

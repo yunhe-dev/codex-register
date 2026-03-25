@@ -173,145 +173,17 @@
                         </div>
                         <div class="card-body">
                             <form id="registration-form">
-                                <div class="form-group">
-                                    <label for="email-service">邮箱服务</label>
-                                    <select id="email-service" name="email_service" required>
-                                        <option value="tempmail:default">Tempmail.lol (临时邮箱)</option>
-                                        <option value="outlook">Outlook</option>
-                                        <option value="moe_mail">MoeMail</option>
-                                        <option value="temp_mail">Temp-Mail 自部署</option>
-                                        <option value="duck_mail">DuckMail</option>
-                                        <option value="imap_mail">IMAP 邮箱</option>
-                                        <option value="outlook_batch:all">Outlook 批量注册</option>
-                                    </select>
-                                </div>
-
-                                <!-- Outlook 批量注册区域 -->
-                                <div id="outlook-batch-section" style="display: none;">
-                                    <div class="form-group">
-                                        <label>选择账户</label>
-                                        <div id="outlook-accounts-container" style="max-height: 200px; overflow-y: auto; border: 1px solid var(--border-light); border-radius: var(--radius); padding: var(--spacing-sm);">
-                                            <div class="loading-placeholder" style="text-align: center; padding: var(--spacing-md); color: var(--text-muted);">
-                                                加载中...
-                                            </div>
-                                        </div>
-                                        <div style="margin-top: var(--spacing-sm); display: flex; gap: var(--spacing-xs); flex-wrap: wrap;">
-                                            <button type="button" class="btn btn-ghost btn-sm" onclick="selectAllOutlookAccounts()">全选</button>
-                                            <button type="button" class="btn btn-ghost btn-sm" onclick="selectUnregisteredOutlook()">只选未注册</button>
-                                            <button type="button" class="btn btn-ghost btn-sm" onclick="deselectAllOutlookAccounts()">取消全选</button>
-                                        </div>
+                                <div class="form-section form-panel" id="sub2api-scheduler-group">
+                                    <div class="form-section-header">
+                                        <div class="form-section-title">自动维护 / 自动补注册</div>
+                                        <div class="form-section-desc">这里单独管理 Sub2API 的定时扫描、自动维护和自动补货。</div>
                                     </div>
-                                    <div class="form-group">
-                                        <label for="outlook-concurrency-mode">并发模式</label>
-                                        <select id="outlook-concurrency-mode" name="outlook_concurrency_mode">
-                                            <option value="pipeline">流水线（Pipeline）</option>
-                                            <option value="parallel">并行（Parallel）</option>
-                                        </select>
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="outlook-concurrency-count">并发数 (1-50)</label>
-                                        <input type="number" id="outlook-concurrency-count" name="outlook_concurrency_count" min="1" max="50" value="3">
-                                        <small id="outlook-concurrency-hint" style="color: var(--text-muted); font-size: 0.75rem;">同时最多运行 N 个任务，每隔 interval 秒启动新任务</small>
-                                    </div>
-                                    <div id="outlook-interval-group">
-                                        <div class="form-group">
-                                            <label for="outlook-interval-min">最小间隔 (秒)</label>
-                                            <input type="number" id="outlook-interval-min" name="outlook_interval_min" min="0" max="300" value="5">
-                                        </div>
-                                        <div class="form-group">
-                                            <label for="outlook-interval-max">最大间隔 (秒)</label>
-                                            <input type="number" id="outlook-interval-max" name="outlook_interval_max" min="1" max="600" value="30">
-                                        </div>
-                                    </div>
-                                    <div class="form-group">
-                                        <label style="display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer;">
-                                            <input type="checkbox" id="outlook-skip-registered" checked>
-                                            <span>自动跳过已注册的邮箱</span>
-                                        </label>
-                                    </div>
-                                </div>
-
-                                <div class="form-group" id="reg-mode-group">
-                                    <label for="reg-mode">注册模式</label>
-                                    <select id="reg-mode" name="reg_mode">
-                                        <option value="single">单次注册</option>
-                                        <option value="batch">批量注册</option>
-                                    </select>
-                                </div>
-
-                                <div class="form-group" id="batch-count-group" style="display: none;">
-                                    <label for="batch-count">注册数量 (1-1000)</label>
-                                    <input type="number" id="batch-count" name="batch_count" min="1" max="1000" value="5">
-                                </div>
-
-                                <div id="batch-options" style="display: none;">
-                                    <div class="form-group">
-                                        <label for="concurrency-mode">并发模式</label>
-                                        <select id="concurrency-mode" name="concurrency_mode">
-                                            <option value="pipeline">流水线（Pipeline）</option>
-                                            <option value="parallel">并行（Parallel）</option>
-                                        </select>
-                                    </div>
-
-                                    <div class="form-group">
-                                        <label for="concurrency-count">并发数 (1-50)</label>
-                                        <input type="number" id="concurrency-count" name="concurrency_count" min="1" max="50" value="3">
-                                        <small id="concurrency-hint" style="color: var(--text-muted); font-size: 0.75rem;">同时最多运行 N 个任务，每隔 interval 秒启动新任务</small>
-                                    </div>
-
-                                    <div id="interval-group">
-                                        <div class="form-group">
-                                            <label for="interval-min">最小间隔 (秒)</label>
-                                            <input type="number" id="interval-min" name="interval_min" min="0" max="300" value="5">
-                                        </div>
-
-                                        <div class="form-group">
-                                            <label for="interval-max">最大间隔 (秒)</label>
-                                            <input type="number" id="interval-max" name="interval_max" min="1" max="600" value="30">
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="form-group" id="auto-upload-group">
-                                    <label style="font-weight: 500; margin-bottom: var(--spacing-xs); display: block;">注册后自动操作</label>
-
-                                    <!-- CPA -->
-                                    <label style="display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer;">
-                                        <input type="checkbox" id="auto-upload-cpa">
-                                        <span>上传到 CPA</span>
-                                    </label>
-                                    <div id="cpa-service-select-group" style="display:none; margin-top: 6px; margin-bottom: 8px; padding-left: 4px;">
-                                        <div class="multi-select-dropdown" id="cpa-service-select"></div>
-                                    </div>
-
-                                    <!-- Sub2API -->
-                                    <label style="display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer; margin-top: 6px;">
-                                        <input type="checkbox" id="auto-upload-sub2api">
-                                        <span>上传到 Sub2API</span>
-                                    </label>
-                                    <div id="sub2api-service-select-group" style="display:none; margin-top: 6px; margin-bottom: 8px; padding-left: 4px;">
-                                        <div class="multi-select-dropdown" id="sub2api-service-select"></div>
-                                    </div>
-
-                                    <!-- Team Manager -->
-                                    <label style="display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer; margin-top: 6px;">
-                                        <input type="checkbox" id="auto-upload-tm">
-                                        <span>上传到 Team Manager</span>
-                                    </label>
-                                    <div id="tm-service-select-group" style="display:none; margin-top: 6px; padding-left: 4px;">
-                                        <div class="multi-select-dropdown" id="tm-service-select"></div>
-                                    </div>
-                                </div>
-
-                                <div class="form-group" id="sub2api-scheduler-group" style="padding-top: var(--spacing-sm); border-top: 1px solid var(--border-light); margin-top: var(--spacing-sm);">
                                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-xs);">
                                         <label style="font-weight: 500; margin-bottom: 0;">Sub2API 自动维护与补注册 <span id="sub2api-scheduler-status-badge" style="font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; margin-left: 6px;"></span></label>
-                                        <button type="button" class="btn btn-ghost btn-sm" id="sub2api-force-check-btn" style="padding: 2px 8px; font-size: 0.75rem;">立即检查一次</button>
                                     </div>
-                                    <label style="display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer; margin-top: 6px;">
-                                        <input type="checkbox" id="sub2api-auto-check-enabled">
-                                        <span>启用远端账号自动维护</span>
-                                    </label>
+                                    <div style="margin-top: 6px; padding: 8px 12px; border-radius: var(--radius); background: var(--surface-hover); color: var(--text-secondary); font-size: 0.82rem; line-height: 1.5;">
+                                        自动任务开启后将执行：远端账号自动维护 + 低库存自动补注册并回传。
+                                    </div>
                                     <div style="margin-top: 6px; padding-left: 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
                                         <div class="form-group">
                                             <label for="sub2api-check-interval" style="font-size: 0.8rem; color: var(--text-muted);">定时运行间隔 (分钟)</label>
@@ -322,11 +194,7 @@
                                             <input type="number" id="sub2api-check-sleep" min="0" max="60" value="1" style="padding: 4px 8px; font-size: 0.8rem;">
                                         </div>
                                     </div>
-                                    <label style="display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer; margin-top: 12px;">
-                                        <input type="checkbox" id="sub2api-auto-register-enabled">
-                                        <span>低库存时自动补注册并回传</span>
-                                    </label>
-                                    <div style="margin-top: 6px; padding-left: 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                                    <div style="margin-top: 12px; padding-left: 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
                                         <div class="form-group">
                                             <label for="sub2api-register-threshold" style="font-size: 0.8rem; color: var(--text-muted);">少于此阈值即触发</label>
                                             <input type="number" id="sub2api-register-threshold" min="1" max="1000" value="10" style="padding: 4px 8px; font-size: 0.8rem;">
@@ -350,17 +218,154 @@
                                     </div>
                                     <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px; width: 100%;">
                                         <button type="button" class="btn btn-secondary btn-lg" id="sub2api-save-config-btn" style="width: 100%;">保存并应用配置</button>
-                                        <button type="button" class="btn btn-danger btn-lg" id="sub2api-stop-task-btn" style="width: 100%;">停止自动任务</button>
+                                        <button type="button" class="btn btn-primary btn-lg" id="sub2api-stop-task-btn" style="width: 100%;">开始自动任务</button>
                                     </div>
                                 </div>
 
-                                <div class="form-actions" style="flex-direction: column;">
-                                    <button type="submit" class="btn btn-primary btn-lg" id="start-btn" style="width: 100%;">
-                                        🚀 开始注册
-                                    </button>
-                                    <button type="button" class="btn btn-secondary" id="cancel-btn" disabled style="width: 100%;">
-                                        取消任务
-                                    </button>
+                                <div class="form-section form-panel">
+                                    <div class="form-section-header">
+                                        <div class="form-section-title">手动注册 / 批量注册</div>
+                                        <div class="form-section-desc">这里处理单次注册、批量注册和注册后的自动上传动作。</div>
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="email-service">邮箱服务</label>
+                                        <select id="email-service" name="email_service" required>
+                                            <option value="tempmail:default">Tempmail.lol (临时邮箱)</option>
+                                            <option value="outlook">Outlook</option>
+                                            <option value="moe_mail">MoeMail</option>
+                                            <option value="temp_mail">Temp-Mail 自部署</option>
+                                            <option value="duck_mail">DuckMail</option>
+                                            <option value="imap_mail">IMAP 邮箱</option>
+                                            <option value="outlook_batch:all">Outlook 批量注册</option>
+                                        </select>
+                                    </div>
+
+                                    <!-- Outlook 批量注册区域 -->
+                                    <div id="outlook-batch-section" style="display: none;">
+                                        <div class="form-group">
+                                            <label>选择账户</label>
+                                            <div id="outlook-accounts-container" style="max-height: 200px; overflow-y: auto; border: 1px solid var(--border-light); border-radius: var(--radius); padding: var(--spacing-sm);">
+                                                <div class="loading-placeholder" style="text-align: center; padding: var(--spacing-md); color: var(--text-muted);">
+                                                    加载中...
+                                                </div>
+                                            </div>
+                                            <div style="margin-top: var(--spacing-sm); display: flex; gap: var(--spacing-xs); flex-wrap: wrap;">
+                                                <button type="button" class="btn btn-ghost btn-sm" onclick="selectAllOutlookAccounts()">全选</button>
+                                                <button type="button" class="btn btn-ghost btn-sm" onclick="selectUnregisteredOutlook()">只选未注册</button>
+                                                <button type="button" class="btn btn-ghost btn-sm" onclick="deselectAllOutlookAccounts()">取消全选</button>
+                                            </div>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="outlook-concurrency-mode">并发模式</label>
+                                            <select id="outlook-concurrency-mode" name="outlook_concurrency_mode">
+                                                <option value="pipeline">流水线（Pipeline）</option>
+                                                <option value="parallel">并行（Parallel）</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="outlook-concurrency-count">并发数 (1-50)</label>
+                                            <input type="number" id="outlook-concurrency-count" name="outlook_concurrency_count" min="1" max="50" value="3">
+                                            <small id="outlook-concurrency-hint" style="color: var(--text-muted); font-size: 0.75rem;">同时最多运行 N 个任务，每隔 interval 秒启动新任务</small>
+                                        </div>
+                                        <div id="outlook-interval-group">
+                                            <div class="form-group">
+                                                <label for="outlook-interval-min">最小间隔 (秒)</label>
+                                                <input type="number" id="outlook-interval-min" name="outlook_interval_min" min="0" max="300" value="5">
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="outlook-interval-max">最大间隔 (秒)</label>
+                                                <input type="number" id="outlook-interval-max" name="outlook_interval_max" min="1" max="600" value="30">
+                                            </div>
+                                        </div>
+                                        <div class="form-group">
+                                            <label style="display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer;">
+                                                <input type="checkbox" id="outlook-skip-registered" checked>
+                                                <span>自动跳过已注册的邮箱</span>
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <div class="form-group" id="reg-mode-group">
+                                        <label for="reg-mode">注册模式</label>
+                                        <select id="reg-mode" name="reg_mode">
+                                            <option value="single">单次注册</option>
+                                            <option value="batch">批量注册</option>
+                                        </select>
+                                    </div>
+
+                                    <div class="form-group" id="batch-count-group" style="display: none;">
+                                        <label for="batch-count">注册数量 (1-1000)</label>
+                                        <input type="number" id="batch-count" name="batch_count" min="1" max="1000" value="5">
+                                    </div>
+
+                                    <div id="batch-options" style="display: none;">
+                                        <div class="form-group">
+                                            <label for="concurrency-mode">并发模式</label>
+                                            <select id="concurrency-mode" name="concurrency_mode">
+                                                <option value="pipeline">流水线（Pipeline）</option>
+                                                <option value="parallel">并行（Parallel）</option>
+                                            </select>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label for="concurrency-count">并发数 (1-50)</label>
+                                            <input type="number" id="concurrency-count" name="concurrency_count" min="1" max="50" value="3">
+                                            <small id="concurrency-hint" style="color: var(--text-muted); font-size: 0.75rem;">同时最多运行 N 个任务，每隔 interval 秒启动新任务</small>
+                                        </div>
+
+                                        <div id="interval-group">
+                                            <div class="form-group">
+                                                <label for="interval-min">最小间隔 (秒)</label>
+                                                <input type="number" id="interval-min" name="interval_min" min="0" max="300" value="5">
+                                            </div>
+
+                                            <div class="form-group">
+                                                <label for="interval-max">最大间隔 (秒)</label>
+                                                <input type="number" id="interval-max" name="interval_max" min="1" max="600" value="30">
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="form-group" id="auto-upload-group">
+                                        <label style="font-weight: 500; margin-bottom: var(--spacing-xs); display: block;">注册后自动操作</label>
+
+                                        <!-- CPA -->
+                                        <label style="display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer;">
+                                            <input type="checkbox" id="auto-upload-cpa">
+                                            <span>上传到 CPA</span>
+                                        </label>
+                                        <div id="cpa-service-select-group" style="display:none; margin-top: 6px; margin-bottom: 8px; padding-left: 4px;">
+                                            <div class="multi-select-dropdown" id="cpa-service-select"></div>
+                                        </div>
+
+                                        <!-- Sub2API -->
+                                        <label style="display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer; margin-top: 6px;">
+                                            <input type="checkbox" id="auto-upload-sub2api">
+                                            <span>上传到 Sub2API</span>
+                                        </label>
+                                        <div id="sub2api-service-select-group" style="display:none; margin-top: 6px; margin-bottom: 8px; padding-left: 4px;">
+                                            <div class="multi-select-dropdown" id="sub2api-service-select"></div>
+                                        </div>
+
+                                        <!-- Team Manager -->
+                                        <label style="display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer; margin-top: 6px;">
+                                            <input type="checkbox" id="auto-upload-tm">
+                                            <span>上传到 Team Manager</span>
+                                        </label>
+                                        <div id="tm-service-select-group" style="display:none; margin-top: 6px; padding-left: 4px;">
+                                            <div class="multi-select-dropdown" id="tm-service-select"></div>
+                                        </div>
+                                    </div>
+
+                                    <div class="form-actions" style="flex-direction: column;">
+                                        <button type="submit" class="btn btn-primary btn-lg" id="start-btn" style="width: 100%;">
+                                            🚀 开始注册
+                                        </button>
+                                        <button type="button" class="btn btn-secondary" id="cancel-btn" disabled style="width: 100%;">
+                                            取消任务
+                                        </button>
+                                    </div>
                                 </div>
                             </form>
                         </div>
@@ -385,9 +390,11 @@
                                         <div class="summary-strip-title">最近一次扫描摘要</div>
                                         <div class="summary-strip-meta">
                                             <span>上次扫描：<strong id="sub2api-last-scan-time">-</strong></span>
+                                            <span>预计下次：<strong id="sub2api-next-scan-time">-</strong></span>
                                             <span>运行状态：<strong id="sub2api-last-scan-status">-</strong></span>
                                         </div>
                                     </div>
+                                    <button type="button" class="btn btn-primary btn-sm" id="sub2api-force-check-btn" style="padding: 4px 10px; font-size: 0.75rem;">立即扫描</button>
                                 </div>
                                 <div class="summary-table-wrap">
                                     <div class="summary-table">

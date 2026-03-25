@@ -193,6 +193,10 @@ def create_app() -> FastAPI:
         loop = asyncio.get_event_loop()
         task_manager.set_loop(loop)
         start_sub2api_scheduler()
+        logger.info(
+            "自动任务恢复状态：%s",
+            "开启" if settings.sub2api_auto_check_enabled else "关闭",
+        )
 
         logger.info("=" * 50)
         logger.info(f"{settings.app_name} v{settings.app_version} 启动中...")
