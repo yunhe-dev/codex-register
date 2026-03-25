@@ -35,6 +35,7 @@ _scheduler_state_lock = threading.Lock()
 AUTO_REGISTER_RETRY_DELAY_SECONDS = 10
 AUTO_REGISTER_BATCH_MODE = "parallel"
 AUTO_REGISTER_BATCH_CONCURRENCY = 5
+HISTORY_RETENTION_DAYS = 90
 
 _scheduler_state = {
     "is_running": False,
@@ -105,6 +106,73 @@ def _log(level: str, msg: str, manual_logs: Optional[list] = None):
         manual_logs.append(f"[{level.upper()}] {msg}")
 
 
+def _record_scheduler_history_point(
+    *,
+    event_type: str,
+    service_id: Optional[int] = None,
+    timestamp: Optional[datetime] = None,
+    anchor_timestamp: Optional[datetime] = None,
+    accounts_healthy_after_scan: Optional[int] = None,
+    replenish_success_count: Optional[int] = None,
+    accounts_rate_limited_after_scan: Optional[int] = None,
+    accounts_invalid_after_scan: Optional[int] = None,
+    total_accounts_after_scan: Optional[int] = None,
+    total_healthy_after_replenish: Optional[int] = None,
+):
+    """记录 Sub2API 自动任务历史点位。"""
+    try:
+        snapshot = get_scheduler_status_snapshot()
+        healthy = accounts_healthy_after_scan
+        if healthy is None:
+            healthy = int(snapshot.get("accounts_healthy") or 0)
+        rate_limited = accounts_rate_limited_after_scan
+        if rate_limited is None:
+            rate_limited = int(snapshot.get("accounts_rate_limited") or 0)
+        invalid = accounts_invalid_after_scan
+        if invalid is None:
+            invalid = int(snapshot.get("accounts_invalid") or 0)
+        total_after_scan = total_accounts_after_scan
+        if total_after_scan is None:
+            total_after_scan = max(0, healthy + rate_limited)
+        replenish_success = replenish_success_count
+        if replenish_success is None:
+            replenish_success = 0
+        total_after_replenish = total_healthy_after_replenish
+        if total_after_replenish is None:
+            total_after_replenish = 0
+
+        with get_db() as db:
+            if anchor_timestamp is not None:
+                crud.upsert_sub2api_scheduler_history_point(
+                    db,
+                    timestamp=anchor_timestamp,
+                    event_type=event_type,
+                    service_id=service_id,
+                    accounts_healthy_after_scan=healthy,
+                    replenish_success_count=replenish_success,
+                    accounts_rate_limited_after_scan=rate_limited,
+                    accounts_invalid_after_scan=invalid,
+                    total_accounts_after_scan=total_after_scan,
+                    total_healthy_after_replenish=total_after_replenish,
+                )
+            else:
+                crud.create_sub2api_scheduler_history_point(
+                    db,
+                    event_type=event_type,
+                    service_id=service_id,
+                    timestamp=timestamp,
+                    accounts_healthy_after_scan=healthy,
+                    replenish_success_count=replenish_success,
+                    accounts_rate_limited_after_scan=rate_limited,
+                    accounts_invalid_after_scan=invalid,
+                    total_accounts_after_scan=total_after_scan,
+                    total_healthy_after_replenish=total_after_replenish,
+                )
+            crud.cleanup_sub2api_scheduler_history(db, keep_days=HISTORY_RETENTION_DAYS)
+    except Exception as exc:
+        logger.warning("写入 Sub2API 历史点位失败: %s", exc)
+
+
 def _resolve_auto_register_email_service() -> Tuple[str, Optional[int]]:
     settings = get_settings()
     saved = (settings.sub2api_auto_register_email_service or "").strip()
@@ -147,7 +215,12 @@ def clear_stop_current_scan_request():
     _scan_stop_event.clear()
 
 
-async def trigger_auto_registration(count: int, sub2api_service_id: int, current_available_count: int = 0):
+async def trigger_auto_registration(
+    count: int,
+    sub2api_service_id: int,
+    current_available_count: int = 0,
+    anchor_timestamp: Optional[datetime] = None,
+):
     logger.info("触发 Sub2API 自动补注册: count=%s service_id=%s", count, sub2api_service_id)
     if count <= 0:
         return
@@ -203,8 +276,10 @@ async def trigger_auto_registration(count: int, sub2api_service_id: int, current
         round_index = 0
         max_attempts = max(1, int(getattr(settings, "sub2api_auto_register_max_attempts", 1) or 1))
 
+        replenish_started_at = datetime.utcnow()
+        point_anchor = anchor_timestamp or replenish_started_at
         _update_scheduler_state(
-            last_replenish_started_at=datetime.utcnow().isoformat(),
+            last_replenish_started_at=replenish_started_at.isoformat(),
             last_replenish_finished_at=None,
             last_replenish_status="running",
             last_replenish_created_count=0,
@@ -294,7 +369,6 @@ async def trigger_auto_registration(count: int, sub2api_service_id: int, current
                 "info",
                 f"自动补注册第 {round_index} 轮完成，成功补充 {round_success_count} 个，累计成功 {total_success_count}/{target_success_count}",
             )
-
             if round_success_count == 0 and remaining_to_create > 0:
                 append_system_log(
                     "warning",
@@ -328,6 +402,13 @@ async def trigger_auto_registration(count: int, sub2api_service_id: int, current
                 last_replenish_created_count=total_created_count,
                 last_replenish_success_count=total_success_count,
                 last_replenish_total_after=current_available_count + total_success_count,
+            )
+            _record_scheduler_history_point(
+                event_type="auto_task_completed",
+                service_id=None,
+                anchor_timestamp=point_anchor,
+                replenish_success_count=total_success_count,
+                total_healthy_after_replenish=current_available_count + total_success_count,
             )
             append_system_log(
                 "info",
@@ -364,9 +445,10 @@ def check_sub2api_services_job(main_loop, manual_logs: list = None):
 
     _scan_stop_event.clear()
     _is_checking = True
+    scan_started_at = datetime.utcnow()
     state_update = dict(
         is_running=True,
-        last_scan_started_at=_utcnow_iso(),
+        last_scan_started_at=scan_started_at.isoformat(),
         last_scan_status="running",
         last_error="",
         services_total=0,
@@ -496,7 +578,7 @@ def check_sub2api_services_job(main_loop, manual_logs: list = None):
                 if to_register > 0 and main_loop:
                     try:
                         asyncio.run_coroutine_threadsafe(
-                            trigger_auto_registration(to_register, svc.id, valid_count),
+                            trigger_auto_registration(to_register, svc.id, valid_count, scan_started_at),
                             main_loop,
                         )
                         _log("info", f"已为服务 {svc.name} 提交自动补注册任务", manual_logs)
@@ -508,6 +590,18 @@ def check_sub2api_services_job(main_loop, manual_logs: list = None):
             is_running=False,
             last_scan_finished_at=_utcnow_iso(),
             last_scan_status="completed",
+        )
+        final_snapshot = get_scheduler_status_snapshot()
+        _record_scheduler_history_point(
+            event_type="auto_task_completed",
+            service_id=None,
+            anchor_timestamp=scan_started_at,
+            accounts_healthy_after_scan=int(final_snapshot.get("accounts_healthy") or 0),
+            accounts_rate_limited_after_scan=int(final_snapshot.get("accounts_rate_limited") or 0),
+            accounts_invalid_after_scan=int(final_snapshot.get("accounts_invalid") or 0),
+            total_accounts_after_scan=int(final_snapshot.get("accounts_healthy") or 0) + int(final_snapshot.get("accounts_rate_limited") or 0),
+            replenish_success_count=0,
+            total_healthy_after_replenish=0,
         )
     except Exception as exc:
         _update_scheduler_state(

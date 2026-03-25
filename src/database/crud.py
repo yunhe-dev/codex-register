@@ -7,7 +7,16 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, desc, asc, func
 
-from .models import Account, EmailService, RegistrationTask, Setting, Proxy, CpaService, Sub2ApiService
+from .models import (
+    Account,
+    EmailService,
+    RegistrationTask,
+    Setting,
+    Proxy,
+    CpaService,
+    Sub2ApiService,
+    Sub2ApiSchedulerHistory,
+)
 
 
 # ============================================================================
@@ -725,6 +734,120 @@ def delete_tm_service(db: Session, service_id: int) -> bool:
     db.delete(svc)
     db.commit()
     return True
+
+
+def create_sub2api_scheduler_history_point(
+    db: Session,
+    event_type: str,
+    service_id: Optional[int] = None,
+    timestamp: Optional[datetime] = None,
+    accounts_healthy_after_scan: Optional[int] = None,
+    replenish_success_count: Optional[int] = None,
+    accounts_rate_limited_after_scan: Optional[int] = None,
+    accounts_invalid_after_scan: Optional[int] = None,
+    total_accounts_after_scan: Optional[int] = None,
+    total_healthy_after_replenish: Optional[int] = None,
+) -> Sub2ApiSchedulerHistory:
+    """创建 Sub2API 自动任务历史点位。"""
+    point = Sub2ApiSchedulerHistory(
+        timestamp=timestamp or datetime.utcnow(),
+        service_id=service_id,
+        event_type=event_type,
+        accounts_healthy_after_scan=accounts_healthy_after_scan,
+        replenish_success_count=replenish_success_count,
+        accounts_rate_limited_after_scan=accounts_rate_limited_after_scan,
+        accounts_invalid_after_scan=accounts_invalid_after_scan,
+        total_accounts_after_scan=total_accounts_after_scan,
+        total_healthy_after_replenish=total_healthy_after_replenish,
+    )
+    db.add(point)
+    db.commit()
+    db.refresh(point)
+    return point
+
+
+def upsert_sub2api_scheduler_history_point(
+    db: Session,
+    timestamp: datetime,
+    event_type: str,
+    service_id: Optional[int] = None,
+    accounts_healthy_after_scan: Optional[int] = None,
+    replenish_success_count: Optional[int] = None,
+    accounts_rate_limited_after_scan: Optional[int] = None,
+    accounts_invalid_after_scan: Optional[int] = None,
+    total_accounts_after_scan: Optional[int] = None,
+    total_healthy_after_replenish: Optional[int] = None,
+) -> Sub2ApiSchedulerHistory:
+    """按时间锚点更新或创建 Sub2API 自动任务历史点位。"""
+    query = db.query(Sub2ApiSchedulerHistory).filter(Sub2ApiSchedulerHistory.timestamp == timestamp)
+    if service_id is None:
+        query = query.filter(Sub2ApiSchedulerHistory.service_id.is_(None))
+    else:
+        query = query.filter(Sub2ApiSchedulerHistory.service_id == service_id)
+
+    point = query.first()
+    if point is None:
+        point = Sub2ApiSchedulerHistory(
+            timestamp=timestamp,
+            service_id=service_id,
+            event_type=event_type,
+        )
+        db.add(point)
+
+    point.event_type = event_type
+    if accounts_healthy_after_scan is not None:
+        point.accounts_healthy_after_scan = accounts_healthy_after_scan
+    if replenish_success_count is not None:
+        point.replenish_success_count = replenish_success_count
+    if accounts_rate_limited_after_scan is not None:
+        point.accounts_rate_limited_after_scan = accounts_rate_limited_after_scan
+    if accounts_invalid_after_scan is not None:
+        point.accounts_invalid_after_scan = accounts_invalid_after_scan
+    if total_accounts_after_scan is not None:
+        point.total_accounts_after_scan = total_accounts_after_scan
+    if total_healthy_after_replenish is not None:
+        point.total_healthy_after_replenish = total_healthy_after_replenish
+
+    db.commit()
+    db.refresh(point)
+    return point
+
+
+def get_sub2api_scheduler_history_points(
+    db: Session,
+    since: Optional[datetime] = None,
+    service_id: Optional[int] = None,
+    limit: int = 500,
+) -> List[Sub2ApiSchedulerHistory]:
+    """获取 Sub2API 自动任务历史点位（按时间升序）。"""
+    query = db.query(Sub2ApiSchedulerHistory)
+    if since is not None:
+        query = query.filter(Sub2ApiSchedulerHistory.timestamp >= since)
+    if service_id is not None:
+        query = query.filter(Sub2ApiSchedulerHistory.service_id == service_id)
+
+    safe_limit = max(1, min(int(limit or 500), 2000))
+    rows = query.order_by(desc(Sub2ApiSchedulerHistory.timestamp)).limit(safe_limit).all()
+    rows.reverse()
+    return rows
+
+
+def cleanup_sub2api_scheduler_history(
+    db: Session,
+    keep_days: int = 90,
+) -> int:
+    """清理过旧的 Sub2API 自动任务历史点位。"""
+    days = max(1, int(keep_days or 90))
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    removed = (
+        db.query(Sub2ApiSchedulerHistory)
+        .filter(Sub2ApiSchedulerHistory.timestamp < cutoff)
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return int(removed or 0)
+
+
 def update_outlook_refresh_token(db: Session, service_id: int, email: str, new_refresh_token: str):
     """更新 EmailService.config 中指定邮箱的 refresh_token"""
     service = db.query(EmailService).filter(EmailService.id == service_id).first()

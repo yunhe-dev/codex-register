@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+from datetime import datetime, timedelta
 
 
 def _build_test_client(monkeypatch, tmp_path):
@@ -124,3 +125,87 @@ def test_sub2api_scheduler_status_includes_check_enabled(monkeypatch, tmp_path):
         payload = status.json()
         assert payload["success"] is True
         assert payload["status"]["check_enabled"] is True
+
+
+def test_sub2api_scheduler_history_range_filter(monkeypatch, tmp_path):
+    client = _build_test_client(monkeypatch, tmp_path)
+
+    from src.database.session import get_db
+    from src.database import crud
+
+    with get_db() as db:
+        crud.create_sub2api_scheduler_history_point(
+            db,
+            event_type="scan_completed",
+            timestamp=datetime.utcnow() - timedelta(hours=3),
+            service_id=1,
+            accounts_healthy_after_scan=10,
+            accounts_rate_limited_after_scan=2,
+            total_accounts_after_scan=12,
+        )
+        crud.create_sub2api_scheduler_history_point(
+            db,
+            event_type="replenish_completed",
+            timestamp=datetime.utcnow() - timedelta(hours=30),
+            service_id=1,
+            replenish_success_count=3,
+            total_healthy_after_replenish=13,
+        )
+
+    with client:
+        res_24h = client.get("/api/sub2api-scheduler/history?range=24h")
+        assert res_24h.status_code == 200
+        payload_24h = res_24h.json()
+        assert payload_24h["success"] is True
+        assert len(payload_24h["points"]) == 1
+        assert payload_24h["points"][0]["event_type"] == "auto_task_completed"
+        assert payload_24h["points"][0]["total_accounts_after_scan"] == 12
+
+        res_7d = client.get("/api/sub2api-scheduler/history?range=7d")
+        assert res_7d.status_code == 200
+        payload_7d = res_7d.json()
+        assert payload_7d["success"] is True
+        assert len(payload_7d["points"]) == 2
+
+        invalid = client.get("/api/sub2api-scheduler/history?range=2h")
+        assert invalid.status_code == 200
+        assert invalid.json()["success"] is False
+
+
+def test_sub2api_scheduler_history_coalesces_legacy_events(monkeypatch, tmp_path):
+    client = _build_test_client(monkeypatch, tmp_path)
+
+    from src.database.session import get_db
+    from src.database import crud
+
+    anchor = datetime.utcnow() - timedelta(hours=1)
+    with get_db() as db:
+        crud.create_sub2api_scheduler_history_point(
+            db,
+            event_type="scan_completed",
+            timestamp=anchor,
+            service_id=2,
+            accounts_healthy_after_scan=50,
+            accounts_rate_limited_after_scan=5,
+            total_accounts_after_scan=55,
+        )
+        crud.create_sub2api_scheduler_history_point(
+            db,
+            event_type="replenish_completed",
+            timestamp=anchor + timedelta(seconds=20),
+            service_id=2,
+            replenish_success_count=4,
+            total_healthy_after_replenish=59,
+        )
+
+    with client:
+        res = client.get("/api/sub2api-scheduler/history?range=24h")
+        assert res.status_code == 200
+        payload = res.json()
+        assert payload["success"] is True
+        assert len(payload["points"]) == 1
+        point = payload["points"][0]
+        assert point["event_type"] == "auto_task_completed"
+        assert point["accounts_healthy_after_scan"] == 50
+        assert point["replenish_success_count"] == 4
+        assert point["total_healthy_after_replenish"] == 59

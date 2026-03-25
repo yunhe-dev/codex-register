@@ -135,6 +135,9 @@ class DatabaseSessionManager:
                 "default": "BOOLEAN DEFAULT FALSE",
                 "sqlite": "BOOLEAN DEFAULT 0",
             }),
+            ("sub2api_scheduler_history", "total_accounts_after_scan", {
+                "default": "INTEGER",
+            }),
         ]
 
         # 确保新表存在（create_tables 已处理，此处兜底）

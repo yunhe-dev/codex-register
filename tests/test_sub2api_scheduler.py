@@ -8,6 +8,7 @@ from src.core import sub2api_scheduler as scheduler
 
 def test_trigger_auto_registration_uses_parallel_mode_with_fixed_concurrency(monkeypatch):
     captured = {}
+    history_events = []
 
     @contextmanager
     def fake_get_db():
@@ -37,8 +38,14 @@ def test_trigger_auto_registration_uses_parallel_mode_with_fixed_concurrency(mon
     monkeypatch.setattr(scheduler, "run_batch_registration", fake_run_batch_registration)
     monkeypatch.setattr(scheduler, "append_system_log", lambda level, msg: None)
     monkeypatch.setattr(scheduler, "_update_scheduler_state", lambda **kwargs: None)
+    monkeypatch.setattr(scheduler, "_record_scheduler_history_point", lambda **kwargs: history_events.append(kwargs))
     monkeypatch.setattr(scheduler.crud, "create_registration_task", fake_create_registration_task)
     monkeypatch.setattr(scheduler.crud, "get_registration_task_by_uuid", fake_get_registration_task_by_uuid)
+    monkeypatch.setattr(
+        scheduler.crud,
+        "get_sub2api_services",
+        lambda db, enabled=True: [SimpleNamespace(id=99)],
+    )
 
     scheduler._auto_registering_services.clear()
 
@@ -50,6 +57,7 @@ def test_trigger_auto_registration_uses_parallel_mode_with_fixed_concurrency(mon
     assert captured["concurrency"] == scheduler.AUTO_REGISTER_BATCH_CONCURRENCY == 5
     assert captured["auto_upload_sub2api"] is True
     assert captured["sub2api_service_ids"] == [99]
+    assert [item["event_type"] for item in history_events] == ["auto_task_completed"]
 
 
 def test_manual_check_keeps_next_scheduled_time(monkeypatch):
@@ -150,3 +158,52 @@ def test_scan_counters_update_during_service_check(monkeypatch):
     assert final_snapshot["accounts_healthy"] == 2
     assert final_snapshot["available_accounts"] == 2
     assert final_snapshot["services_succeeded"] == 1
+
+
+def test_scan_completed_records_history_point(monkeypatch):
+    @contextmanager
+    def fake_get_db():
+        yield object()
+
+    service = SimpleNamespace(id=7, name="svc", api_url="https://example.com", api_key="k")
+    captured = []
+
+    monkeypatch.setattr(
+        scheduler,
+        "get_settings",
+        lambda: SimpleNamespace(
+            sub2api_auto_check_enabled=True,
+            sub2api_auto_register_enabled=False,
+            sub2api_auto_check_sleep_seconds=0,
+            sub2api_auto_register_threshold=10,
+            sub2api_auto_register_batch_count=5,
+        ),
+    )
+    monkeypatch.setattr(scheduler, "get_db", fake_get_db)
+    monkeypatch.setattr(scheduler.crud, "get_sub2api_services", lambda db, enabled=True: [service])
+    monkeypatch.setattr(
+        scheduler,
+        "list_sub2api_openai_accounts",
+        lambda api_url, api_key: [{"id": 1, "name": "a1"}, {"id": 2, "name": "a2"}, {"id": 3, "name": "a3"}],
+    )
+    monkeypatch.setattr(
+        scheduler,
+        "test_sub2api_account",
+        lambda api_url, api_key, account_id: (
+            (True, "ok") if account_id == 1 else ((None, "限流中，暂时保留") if account_id == 2 else (False, "失效"))
+        ),
+    )
+    monkeypatch.setattr(scheduler, "delete_sub2api_account", lambda api_url, api_key, account_id: (True, "deleted"))
+    monkeypatch.setattr(scheduler, "append_system_log", lambda level, msg: None)
+    monkeypatch.setattr(scheduler, "_record_scheduler_history_point", lambda **kwargs: captured.append(kwargs))
+
+    scheduler._is_checking = False
+    scheduler.check_sub2api_services_job(main_loop=None, manual_logs=[])
+
+    assert len(captured) == 1
+    assert captured[0]["event_type"] == "auto_task_completed"
+    assert captured[0]["service_id"] is None
+    assert captured[0]["accounts_healthy_after_scan"] == 1
+    assert captured[0]["accounts_rate_limited_after_scan"] == 1
+    assert captured[0]["accounts_invalid_after_scan"] == 1
+    assert captured[0]["total_accounts_after_scan"] == 2

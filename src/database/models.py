@@ -161,6 +161,37 @@ class Sub2ApiService(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class Sub2ApiSchedulerHistory(Base):
+    """Sub2API 自动任务历史点位"""
+    __tablename__ = 'sub2api_scheduler_history'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True, nullable=False)
+    service_id = Column(Integer, index=True)
+    event_type = Column(String(50), nullable=False, index=True)
+    accounts_healthy_after_scan = Column(Integer)
+    replenish_success_count = Column(Integer)
+    accounts_rate_limited_after_scan = Column(Integer)
+    accounts_invalid_after_scan = Column(Integer)
+    total_accounts_after_scan = Column(Integer)
+    total_healthy_after_replenish = Column(Integer)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+            "service_id": self.service_id,
+            "event_type": self.event_type,
+            "accounts_healthy_after_scan": self.accounts_healthy_after_scan,
+            "replenish_success_count": self.replenish_success_count,
+            "accounts_rate_limited_after_scan": self.accounts_rate_limited_after_scan,
+            "accounts_invalid_after_scan": self.accounts_invalid_after_scan,
+            "total_accounts_after_scan": self.total_accounts_after_scan,
+            "total_healthy_after_replenish": self.total_healthy_after_replenish,
+        }
+
+
 class TeamManagerService(Base):
     """Team Manager 服务配置表"""
     __tablename__ = 'tm_services'

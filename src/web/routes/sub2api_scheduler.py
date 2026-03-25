@@ -4,14 +4,81 @@ Sub2API 自动维护调度配置 API。
 
 import asyncio
 import logging
+from datetime import datetime, timedelta
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from ...config.settings import get_settings, update_settings
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _coalesce_legacy_history_points(points: list[dict]) -> list[dict]:
+    """将旧口径的 scan/replenish 多事件合并为单个自动任务点。"""
+    legacy_events = {"scan_completed", "replenish_round_completed", "replenish_completed"}
+    if not points:
+        return points
+
+    merged: list[dict] = []
+    index = 0
+    while index < len(points):
+        current = points[index]
+        event_type = str(current.get("event_type") or "")
+        if event_type not in legacy_events:
+            merged.append(current)
+            index += 1
+            continue
+
+        current_ts = current.get("timestamp")
+        current_sid = current.get("service_id")
+        try:
+            anchor_dt = datetime.fromisoformat(current_ts) if isinstance(current_ts, str) else None
+        except Exception:
+            anchor_dt = None
+
+        cluster = [current]
+        j = index + 1
+        while j < len(points):
+            nxt = points[j]
+            nxt_type = str(nxt.get("event_type") or "")
+            if nxt_type not in legacy_events:
+                break
+            if nxt.get("service_id") != current_sid:
+                break
+
+            if anchor_dt is None:
+                break
+            try:
+                nxt_dt = datetime.fromisoformat(nxt.get("timestamp")) if isinstance(nxt.get("timestamp"), str) else None
+            except Exception:
+                nxt_dt = None
+            if nxt_dt is None:
+                break
+            if abs((nxt_dt - anchor_dt).total_seconds()) > 180:
+                break
+            cluster.append(nxt)
+            j += 1
+
+        merged_point = dict(cluster[0])
+        merged_point["event_type"] = "auto_task_completed"
+        for row in cluster[1:]:
+            for key in (
+                "accounts_healthy_after_scan",
+                "replenish_success_count",
+                "accounts_rate_limited_after_scan",
+                "accounts_invalid_after_scan",
+                "total_accounts_after_scan",
+                "total_healthy_after_replenish",
+            ):
+                value = row.get(key)
+                if value is not None:
+                    merged_point[key] = value
+        merged.append(merged_point)
+        index = j
+
+    return merged
 
 
 class Sub2ApiSchedulerConfig(BaseModel):
@@ -72,6 +139,44 @@ async def get_sub2api_scheduler_status():
     status = get_scheduler_status_snapshot()
     status["check_enabled"] = settings.sub2api_auto_check_enabled
     return {"success": True, "status": status}
+
+
+@router.get("/history")
+async def get_sub2api_scheduler_history(
+    range: str = Query("24h"),
+    service_id: int | None = Query(None),
+    limit: int = Query(500),
+):
+    range_map = {
+        "24h": timedelta(hours=24),
+        "7d": timedelta(days=7),
+        "30d": timedelta(days=30),
+    }
+    window = range_map.get((range or "").strip().lower())
+    if window is None:
+        return {"success": False, "message": "不支持的 range 参数，仅支持 24h/7d/30d", "points": []}
+
+    safe_limit = max(1, min(int(limit or 500), 2000))
+    since = datetime.utcnow() - window
+
+    from ...database import crud
+    from ...database.session import get_db
+
+    with get_db() as db:
+        points = crud.get_sub2api_scheduler_history_points(
+            db,
+            since=since,
+            service_id=service_id,
+            limit=safe_limit,
+        )
+    serialized_points = [point.to_dict() for point in points]
+    serialized_points = _coalesce_legacy_history_points(serialized_points)
+
+    return {
+        "success": True,
+        "range": (range or "24h").strip().lower(),
+        "points": serialized_points,
+    }
 
 
 @router.post("/config")
