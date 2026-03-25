@@ -31,6 +31,8 @@ _auto_registering_services = set()
 _auto_registering_lock = threading.Lock()
 _scheduler_state_lock = threading.Lock()
 AUTO_REGISTER_RETRY_DELAY_SECONDS = 10
+AUTO_REGISTER_BATCH_MODE = "parallel"
+AUTO_REGISTER_BATCH_CONCURRENCY = 5
 
 _scheduler_state = {
     "is_running": False,
@@ -195,8 +197,8 @@ async def trigger_auto_registration(count: int, sub2api_service_id: int, current
                 email_service_id=email_service_id,
                 interval_min=settings.registration_sleep_min,
                 interval_max=settings.registration_sleep_max,
-                concurrency=2,
-                mode="pipeline",
+                concurrency=AUTO_REGISTER_BATCH_CONCURRENCY,
+                mode=AUTO_REGISTER_BATCH_MODE,
                 auto_upload_sub2api=True,
                 sub2api_service_ids=[sub2api_service_id],
             )
