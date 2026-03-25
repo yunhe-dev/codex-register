@@ -3,11 +3,12 @@
 """
 
 import asyncio
+import inspect
 import logging
 import uuid
 import random
 from datetime import datetime
-from typing import List, Optional, Dict, Tuple
+from typing import List, Optional, Dict, Tuple, Callable, Awaitable
 from curl_cffi import requests as cffi_requests
 
 from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
@@ -725,6 +726,7 @@ async def run_batch_parallel(
     sub2api_service_ids: List[int] = None,
     auto_upload_tm: bool = False,
     tm_service_ids: List[int] = None,
+    on_task_finished: Optional[Callable[[str, str, Dict], Awaitable[None]]] = None,
 ):
     """
     并行模式：所有任务同时提交，Semaphore 控制最大并发数
@@ -759,6 +761,13 @@ async def run_batch_parallel(
                         new_failed += 1
                         add_batch_log(f"{prefix} [失败] 注册失败: {t.error_message}")
                     update_batch_status(completed=new_completed, success=new_success, failed=new_failed)
+                if on_task_finished:
+                    try:
+                        callback_result = on_task_finished(uuid, t.status, t.result or {})
+                        if inspect.isawaitable(callback_result):
+                            await callback_result
+                    except Exception as callback_error:
+                        logger.warning("批量任务回调异常（batch_id=%s, task_uuid=%s）: %s", batch_id, uuid, callback_error)
 
     try:
         await asyncio.gather(*[_run_one(i, u) for i, u in enumerate(task_uuids)], return_exceptions=True)
@@ -791,6 +800,7 @@ async def run_batch_pipeline(
     sub2api_service_ids: List[int] = None,
     auto_upload_tm: bool = False,
     tm_service_ids: List[int] = None,
+    on_task_finished: Optional[Callable[[str, str, Dict], Awaitable[None]]] = None,
 ):
     """
     流水线模式：每隔 interval 秒启动一个新任务，Semaphore 限制最大并发数
@@ -825,6 +835,13 @@ async def run_batch_pipeline(
                             new_failed += 1
                             add_batch_log(f"{pfx} [失败] 注册失败: {t.error_message}")
                         update_batch_status(completed=new_completed, success=new_success, failed=new_failed)
+                    if on_task_finished:
+                        try:
+                            callback_result = on_task_finished(uuid, t.status, t.result or {})
+                            if inspect.isawaitable(callback_result):
+                                await callback_result
+                        except Exception as callback_error:
+                            logger.warning("批量任务回调异常（batch_id=%s, task_uuid=%s）: %s", batch_id, uuid, callback_error)
         finally:
             semaphore.release()
 
@@ -881,6 +898,7 @@ async def run_batch_registration(
     sub2api_service_ids: List[int] = None,
     auto_upload_tm: bool = False,
     tm_service_ids: List[int] = None,
+    on_task_finished: Optional[Callable[[str, str, Dict], Awaitable[None]]] = None,
 ):
     """根据 mode 分发到并行或流水线执行"""
     if mode == "parallel":
@@ -890,6 +908,7 @@ async def run_batch_registration(
             auto_upload_cpa=auto_upload_cpa, cpa_service_ids=cpa_service_ids,
             auto_upload_sub2api=auto_upload_sub2api, sub2api_service_ids=sub2api_service_ids,
             auto_upload_tm=auto_upload_tm, tm_service_ids=tm_service_ids,
+            on_task_finished=on_task_finished,
         )
     else:
         await run_batch_pipeline(
@@ -899,6 +918,7 @@ async def run_batch_registration(
             auto_upload_cpa=auto_upload_cpa, cpa_service_ids=cpa_service_ids,
             auto_upload_sub2api=auto_upload_sub2api, sub2api_service_ids=sub2api_service_ids,
             auto_upload_tm=auto_upload_tm, tm_service_ids=tm_service_ids,
+            on_task_finished=on_task_finished,
         )
 
 

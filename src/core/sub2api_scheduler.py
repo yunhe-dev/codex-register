@@ -272,9 +272,11 @@ async def trigger_auto_registration(
         target_success_count = count
         remaining_to_create = count
         total_success_count = 0
+        live_success_count = 0
         total_created_count = 0
         round_index = 0
         max_attempts = max(1, int(getattr(settings, "sub2api_auto_register_max_attempts", 1) or 1))
+        live_counter_lock = asyncio.Lock()
 
         replenish_started_at = datetime.utcnow()
         point_anchor = anchor_timestamp or replenish_started_at
@@ -330,6 +332,20 @@ async def trigger_auto_registration(
                 f"自动补注册第 {round_index} 轮开始，本轮提交 {remaining_to_create} 个任务",
             )
 
+            async def on_batch_task_finished(task_uuid: str, task_status: str, task_result: dict):
+                nonlocal live_success_count
+                if task_status != "completed":
+                    return
+                upload_success = (task_result or {}).get("sub2api_upload_success")
+                if upload_success is False:
+                    return
+                async with live_counter_lock:
+                    live_success_count += 1
+                    _update_scheduler_state(
+                        last_replenish_success_count=live_success_count,
+                        last_replenish_total_after=current_available_count + live_success_count,
+                    )
+
             await run_batch_registration(
                 batch_id=batch_id,
                 task_uuids=task_uuids,
@@ -343,6 +359,7 @@ async def trigger_auto_registration(
                 mode=register_mode,
                 auto_upload_sub2api=upload_enabled,
                 sub2api_service_ids=upload_service_ids,
+                on_task_finished=on_batch_task_finished,
             )
 
             round_success_count = 0
@@ -358,11 +375,13 @@ async def trigger_auto_registration(
                     round_success_count += 1
 
             total_success_count += round_success_count
+            if live_success_count < total_success_count:
+                live_success_count = total_success_count
             remaining_to_create = max(0, target_success_count - total_success_count)
             _update_scheduler_state(
                 last_replenish_created_count=total_created_count,
-                last_replenish_success_count=total_success_count,
-                last_replenish_total_after=current_available_count + total_success_count,
+                last_replenish_success_count=live_success_count,
+                last_replenish_total_after=current_available_count + live_success_count,
             )
 
             append_system_log(
