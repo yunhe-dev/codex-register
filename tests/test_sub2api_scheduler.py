@@ -207,3 +207,4 @@ def test_scan_completed_records_history_point(monkeypatch):
     assert captured[0]["accounts_rate_limited_after_scan"] == 1
     assert captured[0]["accounts_invalid_after_scan"] == 1
     assert captured[0]["total_accounts_after_scan"] == 2
+    assert captured[0]["total_healthy_after_replenish"] == 1

@@ -139,7 +139,7 @@ def _record_scheduler_history_point(
             replenish_success = 0
         total_after_replenish = total_healthy_after_replenish
         if total_after_replenish is None:
-            total_after_replenish = 0
+            total_after_replenish = healthy
 
         with get_db() as db:
             if anchor_timestamp is not None:
@@ -601,7 +601,7 @@ def check_sub2api_services_job(main_loop, manual_logs: list = None):
             accounts_invalid_after_scan=int(final_snapshot.get("accounts_invalid") or 0),
             total_accounts_after_scan=int(final_snapshot.get("accounts_healthy") or 0) + int(final_snapshot.get("accounts_rate_limited") or 0),
             replenish_success_count=0,
-            total_healthy_after_replenish=0,
+            total_healthy_after_replenish=int(final_snapshot.get("accounts_healthy") or 0),
         )
     except Exception as exc:
         _update_scheduler_state(
