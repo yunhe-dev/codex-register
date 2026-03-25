@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from curl_cffi import requests as cffi_requests
 
+from ...config.constants import OPENAI_SUB2API_MODEL_MAPPING
 from ...database.models import Account
 from ...database.session import get_db
 
@@ -728,17 +729,7 @@ def _build_sub2api_account_items(accounts: List[Account], concurrency: int, prio
                 "client_id": acc.client_id or "",
                 "expires_at": expires_at,
                 "expires_in": 863999,
-                "model_mapping": {
-                    "gpt-5.1": "gpt-5.1",
-                    "gpt-5.1-codex": "gpt-5.1-codex",
-                    "gpt-5.1-codex-max": "gpt-5.1-codex-max",
-                    "gpt-5.1-codex-mini": "gpt-5.1-codex-mini",
-                    "gpt-5.2": "gpt-5.2",
-                    "gpt-5.2-codex": "gpt-5.2-codex",
-                    "gpt-5.3": "gpt-5.3",
-                    "gpt-5.3-codex": "gpt-5.3-codex",
-                    "gpt-5.4": "gpt-5.4",
-                },
+                "model_mapping": dict(OPENAI_SUB2API_MODEL_MAPPING),
                 "organization_id": acc.workspace_id or "",
                 "refresh_token": acc.refresh_token or "",
             },
@@ -775,17 +766,7 @@ def _create_account_with_group_binding(
             "client_id": acc.client_id or "",
             "expires_at": expires_at,
             "expires_in": 863999,
-            "model_mapping": {
-                "gpt-5.1": "gpt-5.1",
-                "gpt-5.1-codex": "gpt-5.1-codex",
-                "gpt-5.1-codex-max": "gpt-5.1-codex-max",
-                "gpt-5.1-codex-mini": "gpt-5.1-codex-mini",
-                "gpt-5.2": "gpt-5.2",
-                "gpt-5.2-codex": "gpt-5.2-codex",
-                "gpt-5.3": "gpt-5.3",
-                "gpt-5.3-codex": "gpt-5.3-codex",
-                "gpt-5.4": "gpt-5.4",
-            },
+            "model_mapping": dict(OPENAI_SUB2API_MODEL_MAPPING),
             "organization_id": acc.workspace_id or "",
             "refresh_token": acc.refresh_token or "",
         },

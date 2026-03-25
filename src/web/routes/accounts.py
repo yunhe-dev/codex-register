@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Query, BackgroundTasks, Body
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from ...config.constants import AccountStatus
+from ...config.constants import AccountStatus, OPENAI_SUB2API_MODEL_MAPPING
 from ...config.settings import get_settings
 from ...core.openai.token_refresh import refresh_account_token as do_refresh
 from ...core.openai.token_refresh import validate_account_token as do_validate
@@ -449,17 +449,7 @@ async def export_accounts_sub2api(request: BatchExportRequest):
                 "client_id": acc.client_id or "",
                 "expires_at": expires_at,
                 "expires_in": 863999,
-                "model_mapping": {
-                    "gpt-5.1": "gpt-5.1",
-                    "gpt-5.1-codex": "gpt-5.1-codex",
-                    "gpt-5.1-codex-max": "gpt-5.1-codex-max",
-                    "gpt-5.1-codex-mini": "gpt-5.1-codex-mini",
-                    "gpt-5.2": "gpt-5.2",
-                    "gpt-5.2-codex": "gpt-5.2-codex",
-                    "gpt-5.3": "gpt-5.3",
-                    "gpt-5.3-codex": "gpt-5.3-codex",
-                    "gpt-5.4": "gpt-5.4"
-                },
+                "model_mapping": dict(OPENAI_SUB2API_MODEL_MAPPING),
                 "organization_id": acc.workspace_id or "",
                 "refresh_token": acc.refresh_token or ""
             },

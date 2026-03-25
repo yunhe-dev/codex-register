@@ -80,6 +80,22 @@ OPENAI_PAGE_TYPES = {
     "PASSWORD_REGISTRATION": "create_account_password",  # 新账号，需要设置密码
 }
 
+# Sub2API/SmewAI 上传时使用的 OpenAI 模型映射。
+# SmewAI 对已配置 model_mapping 的账号会按显式映射展示可用模型，
+# 因此这里需要与目标端支持的模型保持同步，避免上传后白名单缺项。
+OPENAI_SUB2API_MODEL_MAPPING = {
+    "gpt-5.1": "gpt-5.1",
+    "gpt-5.1-codex": "gpt-5.1-codex",
+    "gpt-5.1-codex-max": "gpt-5.1-codex-max",
+    "gpt-5.1-codex-mini": "gpt-5.1-codex-mini",
+    "gpt-5.2": "gpt-5.2",
+    "gpt-5.2-codex": "gpt-5.2-codex",
+    "gpt-5.3": "gpt-5.3",
+    "gpt-5.3-codex": "gpt-5.3-codex",
+    "gpt-5.4": "gpt-5.4",
+    "gpt-5.4-mini": "gpt-5.4-mini",
+}
+
 # ============================================================================
 # 邮箱服务相关常量
 # ============================================================================

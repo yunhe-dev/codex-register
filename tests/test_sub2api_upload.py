@@ -1,4 +1,5 @@
 from src.core.upload import sub2api_upload
+from src.config.constants import OPENAI_SUB2API_MODEL_MAPPING
 
 
 class FakeResponse:
@@ -170,6 +171,44 @@ def test_upload_to_sub2api_uses_account_create_when_proxy_id_is_configured(monke
     assert calls[0]["url"] == "https://sub2api.example.com/api/v1/admin/accounts"
     assert calls[0]["kwargs"]["json"]["proxy_id"] == 42
     assert calls[0]["kwargs"]["json"]["group_ids"] == []
+    assert calls[0]["kwargs"]["json"]["credentials"]["model_mapping"] == OPENAI_SUB2API_MODEL_MAPPING
+
+
+def test_upload_to_sub2api_bulk_payload_includes_gpt_5_4_mini(monkeypatch):
+    calls = []
+
+    def fake_post(url, **kwargs):
+        calls.append({"url": url, "kwargs": kwargs})
+        return FakeResponse(status_code=201, payload={"success": True})
+
+    account = type(
+        "AccountStub",
+        (),
+        {
+            "email": "tester@example.com",
+            "access_token": "token-123",
+            "expires_at": None,
+            "account_id": "acct-1",
+            "client_id": "client-1",
+            "workspace_id": "ws-1",
+            "refresh_token": "refresh-1",
+        },
+    )()
+
+    monkeypatch.setattr(sub2api_upload.cffi_requests, "post", fake_post)
+
+    success, message = sub2api_upload.upload_to_sub2api(
+        [account],
+        "https://sub2api.example.com",
+        "key-123",
+    )
+
+    assert success is True
+    assert message == "成功上传 1 个账号"
+    assert calls[0]["url"] == "https://sub2api.example.com/api/v1/admin/accounts/data"
+    payload = calls[0]["kwargs"]["json"]["data"]["accounts"][0]
+    assert payload["credentials"]["model_mapping"] == OPENAI_SUB2API_MODEL_MAPPING
+    assert payload["credentials"]["model_mapping"]["gpt-5.4-mini"] == "gpt-5.4-mini"
 
 
 def test_test_sub2api_account_returns_unknown_on_timeout(monkeypatch):
