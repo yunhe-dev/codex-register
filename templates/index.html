@@ -500,6 +500,31 @@
                                     </div>
                                 </div>
                             </div>
+                            <div id="sub2api-history-chart-card" class="summary-strip" style="border-top: 1px solid var(--border-light);">
+                                <div class="history-chart-header">
+                                    <div class="history-chart-title">历史走势</div>
+                                    <div class="history-chart-controls">
+                                        <select id="sub2api-history-range" class="form-select history-range-select">
+                                            <option value="24h">最近24小时</option>
+                                            <option value="7d">最近7天</option>
+                                            <option value="30d">最近30天</option>
+                                        </select>
+                                        <button type="button" class="btn btn-ghost btn-sm" id="sub2api-history-refresh-btn">刷新</button>
+                                    </div>
+                                </div>
+                                <div class="history-chart-legend" id="sub2api-history-legend">
+                                    <label class="history-legend-item"><input type="checkbox" data-series="accounts_healthy_after_scan" checked><span class="dot healthy"></span>扫描后健康</label>
+                                    <label class="history-legend-item"><input type="checkbox" data-series="replenish_success_count" checked><span class="dot replenish"></span>补货数量</label>
+                                    <label class="history-legend-item"><input type="checkbox" data-series="accounts_invalid_after_scan" checked><span class="dot invalid"></span>失效数量</label>
+                                    <label class="history-legend-item"><input type="checkbox" data-series="total_accounts_after_scan" checked><span class="dot total-accounts"></span>总账号数量(健康)</label>
+                                    <label class="history-legend-item"><input type="checkbox" data-series="total_healthy_after_replenish" checked><span class="dot total"></span>补货后总健康</label>
+                                </div>
+                                <div class="history-chart-wrap">
+                                    <canvas id="sub2api-history-canvas" height="260"></canvas>
+                                    <div id="sub2api-history-empty" class="history-chart-empty" style="display: none;">暂无历史数据，请等待扫描/补货完成后查看</div>
+                                    <div id="sub2api-history-tooltip" class="history-chart-tooltip" style="display: none;"></div>
+                                </div>
+                            </div>
                             <!-- 任务状态行 -->
                             <div class="task-status-row" id="task-status-row" style="display: none;">
                                 <div class="task-status-item">
