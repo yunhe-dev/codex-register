@@ -819,7 +819,6 @@ body {
 .history-legend-item .dot.healthy { background: var(--success-color); }
 .history-legend-item .dot.replenish { background: var(--primary-color); }
 .history-legend-item .dot.invalid { background: var(--danger-color); }
-.history-legend-item .dot.total-accounts { background: #64748b; }
 .history-legend-item .dot.total { background: var(--info-color); }
 
 .history-chart-wrap {

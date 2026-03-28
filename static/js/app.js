@@ -55,21 +55,18 @@ const sub2apiHistoryVisibleSeries = new Set([
     'accounts_healthy_after_scan',
     'replenish_success_count',
     'accounts_invalid_after_scan',
-    'total_accounts_after_scan',
     'total_healthy_after_replenish',
 ]);
 const SUB2API_HISTORY_SERIES = [
     { key: 'accounts_healthy_after_scan', color: '#10a37f' },
     { key: 'replenish_success_count', color: '#2563eb' },
     { key: 'accounts_invalid_after_scan', color: '#ef4444' },
-    { key: 'total_accounts_after_scan', color: '#64748b' },
     { key: 'total_healthy_after_replenish', color: '#0ea5e9' },
 ];
 const SUB2API_HISTORY_SERIES_LABELS = {
     accounts_healthy_after_scan: '扫描后健康',
     replenish_success_count: '补货数量',
     accounts_invalid_after_scan: '失效数量',
-    total_accounts_after_scan: '总账号数量(健康)',
     total_healthy_after_replenish: '补货后总健康',
 };
 let sub2apiHistoryHoverPoints = [];
@@ -327,10 +324,6 @@ function initSub2ApiHistoryPreferences() {
                         sub2apiHistoryVisibleSeries.add(key);
                     }
                 });
-                // 老版本没有该曲线配置，升级后默认开启
-                if (!sub2apiHistoryVisibleSeries.has('total_accounts_after_scan')) {
-                    sub2apiHistoryVisibleSeries.add('total_accounts_after_scan');
-                }
             }
         }
     } catch (e) {}
