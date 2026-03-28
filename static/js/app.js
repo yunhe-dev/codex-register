@@ -169,7 +169,6 @@ const elements = {
     sub2apiAccountsUnknown: document.getElementById('sub2api-accounts-unknown'),
     sub2apiAccountsInvalid: document.getElementById('sub2api-accounts-invalid'),
     sub2apiAccountsDeleted: document.getElementById('sub2api-accounts-deleted'),
-    sub2apiAvailableAccounts: document.getElementById('sub2api-available-accounts'),
     sub2apiLastReplenishTime: document.getElementById('sub2api-last-replenish-time'),
     sub2apiLastReplenishStatus: document.getElementById('sub2api-last-replenish-status'),
     sub2apiReplenishCreatedCount: document.getElementById('sub2api-replenish-created-count'),
@@ -794,9 +793,6 @@ function updateSub2ApiSchedulerSummary(status) {
     }
     if (elements.sub2apiAccountsDeleted) {
         elements.sub2apiAccountsDeleted.textContent = String(status.accounts_deleted ?? 0);
-    }
-    if (elements.sub2apiAvailableAccounts) {
-        elements.sub2apiAvailableAccounts.textContent = String(status.available_accounts ?? 0);
     }
     if (elements.sub2apiLastReplenishTime) {
         elements.sub2apiLastReplenishTime.textContent = formatDateTime(status.last_replenish_finished_at || status.last_replenish_started_at);
