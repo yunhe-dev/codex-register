@@ -678,7 +678,7 @@ body {
 
 .summary-table {
     display: grid;
-    grid-template-columns: repeat(5, minmax(84px, 1fr));
+    grid-template-columns: repeat(6, minmax(84px, 1fr));
     gap: 0;
     min-width: 640px;
     background: var(--surface);
@@ -722,6 +722,10 @@ body {
     background: var(--success-color);
 }
 
+.summary-table-cell.is-rate-limited::before {
+    background: var(--warning-color);
+}
+
 .summary-table-cell.is-review::before {
     background: var(--info-color);
 }
@@ -743,6 +747,10 @@ body {
 .summary-table-cell.is-active .summary-table-value,
 .summary-table-cell.is-healthy .summary-table-value {
     color: var(--success-color);
+}
+
+.summary-table-cell.is-rate-limited .summary-table-value {
+    color: var(--warning-color);
 }
 
 .summary-table-cell.is-review .summary-table-value {
@@ -788,6 +796,12 @@ body {
     font-size: 0.78rem;
 }
 
+.income-unit-input {
+    width: 92px;
+    padding: 5px 8px;
+    font-size: 0.78rem;
+}
+
 .history-chart-legend {
     display: flex;
     flex-wrap: wrap;
@@ -817,6 +831,7 @@ body {
 }
 
 .history-legend-item .dot.healthy { background: var(--success-color); }
+.history-legend-item .dot.rate-limited { background: var(--warning-color); }
 .history-legend-item .dot.replenish { background: var(--primary-color); }
 .history-legend-item .dot.invalid { background: var(--danger-color); }
 .history-legend-item .dot.total { background: var(--info-color); }
@@ -833,6 +848,21 @@ body {
 #sub2api-history-canvas {
     width: 100%;
     height: 260px;
+    display: block;
+}
+
+.income-chart-wrap {
+    position: relative;
+    min-height: 220px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    overflow: hidden;
+}
+
+#sub2api-income-canvas {
+    width: 100%;
+    height: 220px;
     display: block;
 }
 

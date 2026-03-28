@@ -454,13 +454,17 @@
                                             <div class="summary-table-value" id="sub2api-accounts-healthy">0</div>
                                             <div class="summary-table-label">健康</div>
                                         </div>
+                                        <div class="summary-table-cell is-rate-limited">
+                                            <div class="summary-table-value" id="sub2api-accounts-rate-limited">0</div>
+                                            <div class="summary-table-label">限流</div>
+                                        </div>
                                         <div class="summary-table-cell is-review">
                                             <div class="summary-table-value" id="sub2api-accounts-unknown">0</div>
                                             <div class="summary-table-label">待确认</div>
                                         </div>
                                         <div class="summary-table-cell is-invalid">
                                             <div class="summary-table-value" id="sub2api-accounts-invalid">0</div>
-                                            <div class="summary-table-label">失效</div>
+                                            <div class="summary-table-label">封号</div>
                                         </div>
                                         <div class="summary-table-cell is-deleted">
                                             <div class="summary-table-value" id="sub2api-accounts-deleted">0</div>
@@ -510,14 +514,28 @@
                                 </div>
                                 <div class="history-chart-legend" id="sub2api-history-legend">
                                     <label class="history-legend-item"><input type="checkbox" data-series="accounts_healthy_after_scan" checked><span class="dot healthy"></span>扫描后健康</label>
+                                    <label class="history-legend-item"><input type="checkbox" data-series="accounts_rate_limited_after_scan" checked><span class="dot rate-limited"></span>限流数量</label>
                                     <label class="history-legend-item"><input type="checkbox" data-series="replenish_success_count" checked><span class="dot replenish"></span>补货数量</label>
-                                    <label class="history-legend-item"><input type="checkbox" data-series="accounts_invalid_after_scan" checked><span class="dot invalid"></span>失效数量</label>
+                                    <label class="history-legend-item"><input type="checkbox" data-series="accounts_invalid_after_scan" checked><span class="dot invalid"></span>封号数量</label>
                                     <label class="history-legend-item"><input type="checkbox" data-series="total_healthy_after_replenish" checked><span class="dot total"></span>补货后总健康</label>
                                 </div>
                                 <div class="history-chart-wrap">
                                     <canvas id="sub2api-history-canvas" height="260"></canvas>
                                     <div id="sub2api-history-empty" class="history-chart-empty" style="display: none;">暂无历史数据，请等待扫描/补货完成后查看</div>
                                     <div id="sub2api-history-tooltip" class="history-chart-tooltip" style="display: none;"></div>
+                                </div>
+                            </div>
+                            <div id="sub2api-income-chart-card" class="summary-strip" style="border-top: 1px solid var(--border-light);">
+                                <div class="history-chart-header">
+                                    <div class="history-chart-title">收入走势（柱状图）</div>
+                                    <div class="history-chart-controls">
+                                        <label for="income-unit-price" style="font-size: 0.76rem; color: var(--text-secondary);">单账号收益</label>
+                                        <input id="income-unit-price" class="form-input income-unit-input" type="number" min="0" step="0.01" value="1">
+                                    </div>
+                                </div>
+                                <div class="income-chart-wrap">
+                                    <canvas id="sub2api-income-canvas" height="220"></canvas>
+                                    <div id="sub2api-income-empty" class="history-chart-empty" style="display: none;">暂无可计算收入的数据</div>
                                 </div>
                             </div>
                             <!-- 任务状态行 -->
