@@ -51,7 +51,6 @@ let currentSub2ApiRegisterIntervalMax = 30;
 let sub2apiHistoryPollingInterval = null;
 let sub2apiHistoryPoints = [];
 let sub2apiHistoryRange = '24h';
-let sub2apiIncomeUnitPrice = 1;
 const sub2apiHistoryVisibleSeries = new Set([
     'accounts_healthy_after_scan',
     'accounts_rate_limited_after_scan',
@@ -182,9 +181,6 @@ const elements = {
     sub2apiHistoryCanvas: document.getElementById('sub2api-history-canvas'),
     sub2apiHistoryEmpty: document.getElementById('sub2api-history-empty'),
     sub2apiHistoryTooltip: document.getElementById('sub2api-history-tooltip'),
-    sub2apiIncomeUnitPrice: document.getElementById('income-unit-price'),
-    sub2apiIncomeCanvas: document.getElementById('sub2api-income-canvas'),
-    sub2apiIncomeEmpty: document.getElementById('sub2api-income-empty'),
 };
 
 // 初始化
@@ -321,10 +317,6 @@ function initSub2ApiHistoryPreferences() {
         if (savedRange === '24h' || savedRange === '7d' || savedRange === '30d') {
             sub2apiHistoryRange = savedRange;
         }
-        const rawUnitPrice = parseFloat(localStorage.getItem('sub2api_income_unit_price') || '1');
-        if (Number.isFinite(rawUnitPrice) && rawUnitPrice >= 0) {
-            sub2apiIncomeUnitPrice = rawUnitPrice;
-        }
 
         const rawVisible = localStorage.getItem('sub2api_history_visible_series');
         if (rawVisible) {
@@ -342,9 +334,6 @@ function initSub2ApiHistoryPreferences() {
 
     if (elements.sub2apiHistoryRange) {
         elements.sub2apiHistoryRange.value = sub2apiHistoryRange;
-    }
-    if (elements.sub2apiIncomeUnitPrice) {
-        elements.sub2apiIncomeUnitPrice.value = String(sub2apiIncomeUnitPrice);
     }
     syncSub2ApiHistoryLegendChecked();
 }
@@ -457,20 +446,8 @@ function initEventListeners() {
         elements.sub2apiHistoryCanvas.addEventListener('mousemove', handleSub2ApiHistoryHoverMove);
         elements.sub2apiHistoryCanvas.addEventListener('mouseleave', hideSub2ApiHistoryTooltip);
     }
-    if (elements.sub2apiIncomeUnitPrice) {
-        elements.sub2apiIncomeUnitPrice.addEventListener('change', () => {
-            const value = parseFloat(elements.sub2apiIncomeUnitPrice.value);
-            sub2apiIncomeUnitPrice = Number.isFinite(value) && value >= 0 ? value : 0;
-            elements.sub2apiIncomeUnitPrice.value = String(sub2apiIncomeUnitPrice);
-            try {
-                localStorage.setItem('sub2api_income_unit_price', String(sub2apiIncomeUnitPrice));
-            } catch (e) {}
-            renderSub2ApiIncomeChart();
-        });
-    }
     window.addEventListener('resize', debounce(() => {
         renderSub2ApiHistoryChart();
-        renderSub2ApiIncomeChart();
     }, 180));
 
     let defaultExpanded = false;
@@ -860,17 +837,14 @@ async function loadSub2ApiHistory() {
         if (!res || res.success === false) {
             sub2apiHistoryPoints = [];
             renderSub2ApiHistoryChart();
-            renderSub2ApiIncomeChart();
             return;
         }
         sub2apiHistoryPoints = Array.isArray(res.points) ? res.points : [];
         renderSub2ApiHistoryChart();
-        renderSub2ApiIncomeChart();
     } catch (error) {
         console.error('加载 Sub2API 历史走势失败', error);
         sub2apiHistoryPoints = [];
         renderSub2ApiHistoryChart();
-        renderSub2ApiIncomeChart();
     }
 }
 
@@ -1118,125 +1092,6 @@ function renderSub2ApiHistoryChart() {
             ctx.arc(x, y, 2.5, 0, Math.PI * 2);
             ctx.fill();
         });
-    });
-}
-
-function _buildIncomeBars(points) {
-    const buckets = new Map();
-    const useHourly = sub2apiHistoryRange === '24h';
-
-    points.forEach(point => {
-        if (!point.__date) return;
-        const d = point.__date;
-        const incomeBase = Number.isFinite(point.replenish_success_count) ? point.replenish_success_count : 0;
-        if (incomeBase <= 0) return;
-
-        let key = '';
-        let label = '';
-        if (useHourly) {
-            key = `${d.getUTCFullYear()}-${d.getUTCMonth() + 1}-${d.getUTCDate()}-${d.getUTCHours()}`;
-            label = `${String(d.getHours()).padStart(2, '0')}:00`;
-        } else {
-            key = `${d.getUTCFullYear()}-${d.getUTCMonth() + 1}-${d.getUTCDate()}`;
-            label = `${d.getMonth() + 1}/${d.getDate()}`;
-        }
-
-        const current = buckets.get(key) || { label, amount: 0 };
-        current.amount += incomeBase * sub2apiIncomeUnitPrice;
-        buckets.set(key, current);
-    });
-
-    return Array.from(buckets.values());
-}
-
-function renderSub2ApiIncomeChart() {
-    const canvas = elements.sub2apiIncomeCanvas;
-    if (!canvas) return;
-
-    const points = (sub2apiHistoryPoints || [])
-        .map(point => {
-            const normalized = { ...point, __date: _parseHistoryPointTime(point.timestamp) };
-            normalized.replenish_success_count = Number.isFinite(normalized.replenish_success_count)
-                ? normalized.replenish_success_count
-                : 0;
-            return normalized;
-        })
-        .filter(point => point.__date)
-        .sort((a, b) => a.__date.getTime() - b.__date.getTime());
-
-    const bars = _buildIncomeBars(points);
-    const hasData = bars.length > 0;
-    if (elements.sub2apiIncomeEmpty) {
-        elements.sub2apiIncomeEmpty.style.display = hasData ? 'none' : 'flex';
-    }
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const width = canvas.clientWidth || 720;
-    const height = canvas.clientHeight || 220;
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.max(1, Math.floor(width * dpr));
-    canvas.height = Math.max(1, Math.floor(height * dpr));
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, width, height);
-
-    if (!hasData) return;
-
-    const padding = { top: 14, right: 16, bottom: 32, left: 48 };
-    const chartWidth = Math.max(10, width - padding.left - padding.right);
-    const chartHeight = Math.max(10, height - padding.top - padding.bottom);
-    const maxValue = Math.max(...bars.map(item => item.amount), 0);
-    const yMax = Math.max(1, Math.ceil(maxValue * 1.15));
-    const yToCanvas = y => padding.top + (1 - y / yMax) * chartHeight;
-    const yLabelDigits = Number.isInteger(sub2apiIncomeUnitPrice) ? 0 : 2;
-
-    ctx.strokeStyle = 'rgba(148, 163, 184, 0.25)';
-    ctx.lineWidth = 1;
-    for (let i = 0; i <= 4; i += 1) {
-        const y = padding.top + (chartHeight * i) / 4;
-        ctx.beginPath();
-        ctx.moveTo(padding.left, y);
-        ctx.lineTo(width - padding.right, y);
-        ctx.stroke();
-    }
-
-    ctx.fillStyle = 'rgba(100, 116, 139, 0.9)';
-    ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace';
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'middle';
-    for (let i = 0; i <= 4; i += 1) {
-        const value = yMax - (yMax * i) / 4;
-        const y = padding.top + (chartHeight * i) / 4;
-        ctx.fillText(value.toFixed(yLabelDigits), padding.left - 6, y);
-    }
-
-    const gap = 6;
-    const barCount = bars.length;
-    const barWidth = Math.max(3, (chartWidth - gap * Math.max(0, barCount - 1)) / Math.max(1, barCount));
-    const axisY = padding.top + chartHeight;
-
-    bars.forEach((item, index) => {
-        const x = padding.left + index * (barWidth + gap);
-        const y = yToCanvas(item.amount);
-        const h = Math.max(1, axisY - y);
-
-        const gradient = ctx.createLinearGradient(0, y, 0, axisY);
-        gradient.addColorStop(0, 'rgba(16, 185, 129, 0.95)');
-        gradient.addColorStop(1, 'rgba(5, 150, 105, 0.72)');
-        ctx.fillStyle = gradient;
-        ctx.fillRect(x, y, barWidth, h);
-    });
-
-    const tickStep = barCount <= 12 ? 1 : Math.ceil(barCount / 12);
-    ctx.fillStyle = 'rgba(100, 116, 139, 0.95)';
-    ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    bars.forEach((item, index) => {
-        if (index % tickStep !== 0 && index !== barCount - 1) return;
-        const x = padding.left + index * (barWidth + gap) + barWidth / 2;
-        ctx.fillText(item.label, x, axisY + 8);
     });
 }
 
