@@ -133,7 +133,7 @@ def _record_scheduler_history_point(
             invalid = int(snapshot.get("accounts_invalid") or 0)
         total_after_scan = total_accounts_after_scan
         if total_after_scan is None:
-            total_after_scan = max(0, healthy + rate_limited)
+            total_after_scan = max(0, healthy)
         replenish_success = replenish_success_count
         if replenish_success is None:
             replenish_success = 0
@@ -552,14 +552,8 @@ def check_sub2api_services_job(main_loop, manual_logs: list = None):
                             state_increment["accounts_delete_failed"] = 1
                             _log("error", f"删除失效账号 {account_name} 失败: {delete_message}", manual_logs)
                     else:
-                        valid_count += 1
-                        state_increment["available_accounts"] = 1
-                        if str(message or "").startswith("限流中"):
-                            state_increment["accounts_rate_limited"] = 1
-                            _log("warning", f"账号 {account_name} 限流中，暂时保留: {message}", manual_logs)
-                        else:
-                            state_increment["accounts_unknown"] = 1
-                            _log("warning", f"账号 {account_name} 无法判定健康状态，已跳过删除: {message}", manual_logs)
+                        state_increment["accounts_unknown"] = 1
+                        _log("warning", f"账号 {account_name} 无法判定健康状态，已跳过删除: {message}", manual_logs)
 
                     _increment_scheduler_state(**state_increment)
 
@@ -618,7 +612,7 @@ def check_sub2api_services_job(main_loop, manual_logs: list = None):
             accounts_healthy_after_scan=int(final_snapshot.get("accounts_healthy") or 0),
             accounts_rate_limited_after_scan=int(final_snapshot.get("accounts_rate_limited") or 0),
             accounts_invalid_after_scan=int(final_snapshot.get("accounts_invalid") or 0),
-            total_accounts_after_scan=int(final_snapshot.get("accounts_healthy") or 0) + int(final_snapshot.get("accounts_rate_limited") or 0),
+            total_accounts_after_scan=int(final_snapshot.get("accounts_healthy") or 0),
             replenish_success_count=0,
             total_healthy_after_replenish=int(final_snapshot.get("accounts_healthy") or 0),
         )

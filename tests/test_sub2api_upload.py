@@ -227,6 +227,22 @@ def test_test_sub2api_account_returns_unknown_on_timeout(monkeypatch):
     assert "超时" in message
 
 
+def test_test_sub2api_account_returns_false_on_rate_limit(monkeypatch):
+    def fake_post(url, **kwargs):
+        return FakeResponse(status_code=429)
+
+    monkeypatch.setattr(sub2api_upload.cffi_requests, "post", fake_post)
+
+    result, message = sub2api_upload.test_sub2api_account(
+        "https://sub2api.example.com",
+        "key-123",
+        9,
+    )
+
+    assert result is False
+    assert "按失效处理" in message
+
+
 def test_delete_sub2api_account_accepts_204(monkeypatch):
     calls = []
 

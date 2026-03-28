@@ -48,34 +48,6 @@ let currentSub2ApiRegisterMode = 'parallel';
 let currentSub2ApiRegisterConcurrency = 3;
 let currentSub2ApiRegisterIntervalMin = 5;
 let currentSub2ApiRegisterIntervalMax = 30;
-let sub2apiHistoryPollingInterval = null;
-let sub2apiHistoryPoints = [];
-let sub2apiHistoryRange = '24h';
-const sub2apiHistoryVisibleSeries = new Set([
-    'accounts_healthy_after_scan',
-    'replenish_success_count',
-    'accounts_rate_limited_after_scan',
-    'accounts_invalid_after_scan',
-    'total_accounts_after_scan',
-    'total_healthy_after_replenish',
-]);
-const SUB2API_HISTORY_SERIES = [
-    { key: 'accounts_healthy_after_scan', color: '#10a37f' },
-    { key: 'replenish_success_count', color: '#2563eb' },
-    { key: 'accounts_rate_limited_after_scan', color: '#f59e0b' },
-    { key: 'accounts_invalid_after_scan', color: '#ef4444' },
-    { key: 'total_accounts_after_scan', color: '#64748b' },
-    { key: 'total_healthy_after_replenish', color: '#0ea5e9' },
-];
-const SUB2API_HISTORY_SERIES_LABELS = {
-    accounts_healthy_after_scan: '扫描后健康',
-    replenish_success_count: '补货数量',
-    accounts_rate_limited_after_scan: '限流数量',
-    accounts_invalid_after_scan: '失效数量',
-    total_accounts_after_scan: '总账号数量(健康+限流)',
-    total_healthy_after_replenish: '补货后总健康',
-};
-let sub2apiHistoryHoverPoints = [];
 
 // DOM 元素
 const elements = {
@@ -169,7 +141,6 @@ const elements = {
     sub2apiLastScanStatus: document.getElementById('sub2api-last-scan-status'),
     sub2apiAccountsScanned: document.getElementById('sub2api-accounts-scanned'),
     sub2apiAccountsHealthy: document.getElementById('sub2api-accounts-healthy'),
-    sub2apiAccountsRateLimited: document.getElementById('sub2api-accounts-rate-limited'),
     sub2apiAccountsUnknown: document.getElementById('sub2api-accounts-unknown'),
     sub2apiAccountsInvalid: document.getElementById('sub2api-accounts-invalid'),
     sub2apiAccountsDeleted: document.getElementById('sub2api-accounts-deleted'),
@@ -179,12 +150,6 @@ const elements = {
     sub2apiReplenishCreatedCount: document.getElementById('sub2api-replenish-created-count'),
     sub2apiReplenishSuccessCount: document.getElementById('sub2api-replenish-success-count'),
     sub2apiReplenishTotalAfter: document.getElementById('sub2api-replenish-total-after'),
-    sub2apiHistoryRange: document.getElementById('sub2api-history-range'),
-    sub2apiHistoryRefreshBtn: document.getElementById('sub2api-history-refresh-btn'),
-    sub2apiHistoryLegend: document.getElementById('sub2api-history-legend'),
-    sub2apiHistoryCanvas: document.getElementById('sub2api-history-canvas'),
-    sub2apiHistoryEmpty: document.getElementById('sub2api-history-empty'),
-    sub2apiHistoryTooltip: document.getElementById('sub2api-history-tooltip'),
 };
 
 // 初始化
@@ -197,11 +162,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     populateSub2ApiSchedulerEmailServiceOptions();
     await loadSub2ApiSchedulerConfig();
     await loadSub2ApiSchedulerStatus();
-    initSub2ApiHistoryPreferences();
-    await loadSub2ApiHistory();
     loadRecentAccounts();
     startAccountsPolling();
-    startSub2ApiHistoryPolling();
     initVisibilityReconnect();
     restoreActiveTask();
 });
@@ -315,44 +277,6 @@ function toggleSub2ApiSchedulerAdvanced() {
     setSub2ApiSchedulerAdvancedExpanded(!expanded);
 }
 
-function initSub2ApiHistoryPreferences() {
-    try {
-        const savedRange = localStorage.getItem('sub2api_history_range');
-        if (savedRange === '24h' || savedRange === '7d' || savedRange === '30d') {
-            sub2apiHistoryRange = savedRange;
-        }
-
-        const rawVisible = localStorage.getItem('sub2api_history_visible_series');
-        if (rawVisible) {
-            const parsed = JSON.parse(rawVisible);
-            if (Array.isArray(parsed)) {
-                sub2apiHistoryVisibleSeries.clear();
-                parsed.forEach(key => {
-                    if (typeof key === 'string') {
-                        sub2apiHistoryVisibleSeries.add(key);
-                    }
-                });
-                // 老版本没有该曲线配置，升级后默认开启
-                if (!sub2apiHistoryVisibleSeries.has('total_accounts_after_scan')) {
-                    sub2apiHistoryVisibleSeries.add('total_accounts_after_scan');
-                }
-            }
-        }
-    } catch (e) {}
-
-    if (elements.sub2apiHistoryRange) {
-        elements.sub2apiHistoryRange.value = sub2apiHistoryRange;
-    }
-    syncSub2ApiHistoryLegendChecked();
-}
-
-function syncSub2ApiHistoryLegendChecked() {
-    if (!elements.sub2apiHistoryLegend) return;
-    elements.sub2apiHistoryLegend.querySelectorAll('input[type="checkbox"][data-series]').forEach(checkbox => {
-        checkbox.checked = sub2apiHistoryVisibleSeries.has(checkbox.dataset.series);
-    });
-}
-
 // 事件监听
 function initEventListeners() {
     // 注册表单提交
@@ -418,45 +342,6 @@ function initEventListeners() {
     if (elements.sub2apiSchedulerAdvancedToggle) {
         elements.sub2apiSchedulerAdvancedToggle.addEventListener('click', toggleSub2ApiSchedulerAdvanced);
     }
-    if (elements.sub2apiHistoryRange) {
-        elements.sub2apiHistoryRange.addEventListener('change', async () => {
-            sub2apiHistoryRange = elements.sub2apiHistoryRange.value || '24h';
-            try {
-                localStorage.setItem('sub2api_history_range', sub2apiHistoryRange);
-            } catch (e) {}
-            await loadSub2ApiHistory();
-        });
-    }
-    if (elements.sub2apiHistoryRefreshBtn) {
-        elements.sub2apiHistoryRefreshBtn.addEventListener('click', async () => {
-            await loadSub2ApiHistory();
-            toast.info('历史数据已刷新');
-        });
-    }
-    if (elements.sub2apiHistoryLegend) {
-        elements.sub2apiHistoryLegend.addEventListener('change', (e) => {
-            const target = e.target;
-            if (!target || target.tagName !== 'INPUT') return;
-            const seriesKey = target.dataset.series;
-            if (!seriesKey) return;
-            if (target.checked) {
-                sub2apiHistoryVisibleSeries.add(seriesKey);
-            } else {
-                sub2apiHistoryVisibleSeries.delete(seriesKey);
-            }
-            try {
-                localStorage.setItem('sub2api_history_visible_series', JSON.stringify(Array.from(sub2apiHistoryVisibleSeries)));
-            } catch (e) {}
-            renderSub2ApiHistoryChart();
-        });
-    }
-    if (elements.sub2apiHistoryCanvas) {
-        elements.sub2apiHistoryCanvas.addEventListener('mousemove', handleSub2ApiHistoryHoverMove);
-        elements.sub2apiHistoryCanvas.addEventListener('mouseleave', hideSub2ApiHistoryTooltip);
-    }
-    window.addEventListener('resize', debounce(() => {
-        renderSub2ApiHistoryChart();
-    }, 180));
 
     let defaultExpanded = false;
     try {
@@ -790,9 +675,6 @@ function updateSub2ApiSchedulerSummary(status) {
     if (elements.sub2apiAccountsHealthy) {
         elements.sub2apiAccountsHealthy.textContent = String(status.accounts_healthy ?? 0);
     }
-    if (elements.sub2apiAccountsRateLimited) {
-        elements.sub2apiAccountsRateLimited.textContent = String(status.accounts_rate_limited ?? 0);
-    }
     if (elements.sub2apiAccountsUnknown) {
         elements.sub2apiAccountsUnknown.textContent = String(status.accounts_unknown ?? 0);
     }
@@ -839,271 +721,6 @@ async function loadSub2ApiSchedulerStatus() {
     } catch (error) {
         console.error('加载 Sub2API 调度状态失败', error);
     }
-}
-
-async function loadSub2ApiHistory() {
-    if (!elements.sub2apiHistoryCanvas) return;
-    try {
-        const res = await api.get(`/sub2api-scheduler/history?range=${encodeURIComponent(sub2apiHistoryRange)}&limit=1200`);
-        if (!res || res.success === false) {
-            sub2apiHistoryPoints = [];
-            renderSub2ApiHistoryChart();
-            return;
-        }
-        sub2apiHistoryPoints = Array.isArray(res.points) ? res.points : [];
-        renderSub2ApiHistoryChart();
-    } catch (error) {
-        console.error('加载 Sub2API 历史走势失败', error);
-        sub2apiHistoryPoints = [];
-        renderSub2ApiHistoryChart();
-    }
-}
-
-function startSub2ApiHistoryPolling() {
-    if (sub2apiHistoryPollingInterval) return;
-    sub2apiHistoryPollingInterval = setInterval(() => {
-        loadSub2ApiHistory();
-    }, 15000);
-}
-
-function _parseHistoryPointTime(rawValue) {
-    if (!rawValue || typeof rawValue !== 'string') return null;
-    const value = rawValue.endsWith('Z') ? rawValue : `${rawValue}Z`;
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return null;
-    return date;
-}
-
-function _formatHistoryAxisTime(timestamp) {
-    const date = new Date(timestamp);
-    return date.toLocaleString('zh-CN', {
-        hour12: false,
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-    });
-}
-
-function _formatHistoryTooltipTime(timestamp) {
-    const date = new Date(timestamp);
-    return date.toLocaleString('zh-CN', {
-        hour12: false,
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-    });
-}
-
-function _getHistoryEventLabel(eventType) {
-    const map = {
-        scan_completed: '扫描完成',
-        replenish_round_completed: '补货轮次完成',
-        replenish_completed: '补货完成',
-        auto_task_completed: '自动任务完成',
-    };
-    return map[eventType] || eventType || '-';
-}
-
-function hideSub2ApiHistoryTooltip() {
-    if (elements.sub2apiHistoryTooltip) {
-        elements.sub2apiHistoryTooltip.style.display = 'none';
-    }
-}
-
-function handleSub2ApiHistoryHoverMove(event) {
-    if (!elements.sub2apiHistoryCanvas || !elements.sub2apiHistoryTooltip || !sub2apiHistoryHoverPoints.length) return;
-    const rect = elements.sub2apiHistoryCanvas.getBoundingClientRect();
-    const localX = event.clientX - rect.left;
-    const localY = event.clientY - rect.top;
-
-    let nearest = sub2apiHistoryHoverPoints[0];
-    let minDistance = Math.abs(localX - nearest.x);
-    for (let i = 1; i < sub2apiHistoryHoverPoints.length; i += 1) {
-        const candidate = sub2apiHistoryHoverPoints[i];
-        const dist = Math.abs(localX - candidate.x);
-        if (dist < minDistance) {
-            minDistance = dist;
-            nearest = candidate;
-        }
-    }
-
-    if (!nearest || minDistance > 24) {
-        hideSub2ApiHistoryTooltip();
-        return;
-    }
-
-    const activeSeries = SUB2API_HISTORY_SERIES.filter(series => sub2apiHistoryVisibleSeries.has(series.key));
-    const valueLines = activeSeries
-        .map(series => {
-            const value = nearest.point[series.key];
-            if (!Number.isFinite(value)) return '';
-            const label = SUB2API_HISTORY_SERIES_LABELS[series.key] || series.key;
-            return `${label}: ${value}`;
-        })
-        .filter(Boolean);
-
-    elements.sub2apiHistoryTooltip.innerHTML = `
-        <div>${_formatHistoryTooltipTime(nearest.time)}</div>
-        <div>事件: ${_getHistoryEventLabel(nearest.point.event_type)}</div>
-        ${valueLines.map(line => `<div>${line}</div>`).join('')}
-    `;
-    elements.sub2apiHistoryTooltip.style.display = 'block';
-
-    const tip = elements.sub2apiHistoryTooltip;
-    const tipWidth = tip.offsetWidth || 220;
-    const tipHeight = tip.offsetHeight || 80;
-    const left = Math.min(Math.max(8, localX + 12), rect.width - tipWidth - 8);
-    const top = Math.min(Math.max(8, localY - tipHeight - 8), rect.height - tipHeight - 8);
-    tip.style.left = `${left}px`;
-    tip.style.top = `${top}px`;
-}
-
-function renderSub2ApiHistoryChart() {
-    const canvas = elements.sub2apiHistoryCanvas;
-    if (!canvas) return;
-
-    const historyKeys = SUB2API_HISTORY_SERIES.map(series => series.key);
-    const points = (sub2apiHistoryPoints || [])
-        .map(point => {
-            const normalized = { ...point, __date: _parseHistoryPointTime(point.timestamp) };
-            historyKeys.forEach(key => {
-                const value = normalized[key];
-                normalized[key] = Number.isFinite(value) ? value : 0;
-            });
-            return normalized;
-        })
-        .filter(point => point.__date)
-        .sort((a, b) => a.__date.getTime() - b.__date.getTime());
-
-    const hasData = points.length > 0;
-    if (elements.sub2apiHistoryEmpty) {
-        elements.sub2apiHistoryEmpty.style.display = hasData ? 'none' : 'flex';
-    }
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const width = canvas.clientWidth || 720;
-    const height = canvas.clientHeight || 260;
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.max(1, Math.floor(width * dpr));
-    canvas.height = Math.max(1, Math.floor(height * dpr));
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-    ctx.clearRect(0, 0, width, height);
-
-    if (!hasData) {
-        sub2apiHistoryHoverPoints = [];
-        hideSub2ApiHistoryTooltip();
-        return;
-    }
-
-    const padding = { top: 14, right: 16, bottom: 36, left: 42 };
-    const chartWidth = Math.max(10, width - padding.left - padding.right);
-    const chartHeight = Math.max(10, height - padding.top - padding.bottom);
-    const xMinRaw = points[0].__date.getTime();
-    const xMaxRaw = points[points.length - 1].__date.getTime();
-    const baseSpan = Math.max(1, xMaxRaw - xMinRaw);
-    const sidePaddingMs = Math.max(30000, Math.floor(baseSpan * 0.08));
-    const xMin = xMinRaw - sidePaddingMs;
-    const xMax = xMaxRaw + sidePaddingMs;
-    const safeSpan = Math.max(1, xMax - xMin);
-
-    const activeSeries = SUB2API_HISTORY_SERIES.filter(series => sub2apiHistoryVisibleSeries.has(series.key));
-    const allValues = [];
-    activeSeries.forEach(series => {
-        points.forEach(point => {
-            const value = point[series.key];
-            if (Number.isFinite(value)) {
-                allValues.push(value);
-            }
-        });
-    });
-    const yMaxBase = allValues.length ? Math.max(...allValues) : 0;
-    const yMax = Math.max(10, Math.ceil((yMaxBase * 1.15) / 5) * 5);
-    const yMin = 0;
-
-    const xToCanvas = x => padding.left + ((x - xMin) / safeSpan) * chartWidth;
-    const yToCanvas = y => padding.top + (1 - (y - yMin) / Math.max(1, yMax - yMin)) * chartHeight;
-
-    ctx.strokeStyle = 'rgba(148, 163, 184, 0.25)';
-    ctx.lineWidth = 1;
-    for (let i = 0; i <= 4; i += 1) {
-        const yValue = yMin + ((yMax - yMin) * i) / 4;
-        const y = yToCanvas(yValue);
-        ctx.beginPath();
-        ctx.moveTo(padding.left, y);
-        ctx.lineTo(width - padding.right, y);
-        ctx.stroke();
-    }
-
-    ctx.fillStyle = 'rgba(100, 116, 139, 0.9)';
-    ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace';
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'middle';
-    for (let i = 0; i <= 4; i += 1) {
-        const yValue = yMin + ((yMax - yMin) * i) / 4;
-        const y = yToCanvas(yValue);
-        ctx.fillText(String(Math.round(yValue)), padding.left - 6, y);
-    }
-
-    const rawSpan = Math.max(0, xMaxRaw - xMinRaw);
-    const xTicks = rawSpan === 0
-        ? [xMinRaw]
-        : [xMinRaw, xMinRaw + rawSpan / 2, xMaxRaw];
-    ctx.textBaseline = 'top';
-    xTicks.forEach((tick, index) => {
-        const x = xToCanvas(tick);
-        if (xTicks.length === 1) ctx.textAlign = 'center';
-        else if (index === 0) ctx.textAlign = 'left';
-        else if (index === xTicks.length - 1) ctx.textAlign = 'right';
-        else ctx.textAlign = 'center';
-        ctx.fillText(_formatHistoryAxisTime(tick), x, height - padding.bottom + 8);
-    });
-
-    sub2apiHistoryHoverPoints = points.map(point => ({
-        x: xToCanvas(point.__date.getTime()),
-        time: point.__date.getTime(),
-        point,
-    }));
-
-    activeSeries.forEach(series => {
-        ctx.strokeStyle = series.color;
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-
-        let drawing = false;
-        points.forEach(point => {
-            const value = point[series.key];
-            if (!Number.isFinite(value)) {
-                drawing = false;
-                return;
-            }
-            const x = xToCanvas(point.__date.getTime());
-            const y = yToCanvas(value);
-            if (!drawing) {
-                ctx.moveTo(x, y);
-                drawing = true;
-            } else {
-                ctx.lineTo(x, y);
-            }
-        });
-        ctx.stroke();
-
-        points.forEach(point => {
-            const value = point[series.key];
-            if (!Number.isFinite(value)) return;
-            const x = xToCanvas(point.__date.getTime());
-            const y = yToCanvas(value);
-            ctx.fillStyle = series.color;
-            ctx.beginPath();
-            ctx.arc(x, y, 2.5, 0, Math.PI * 2);
-            ctx.fill();
-        });
-    });
 }
 
 async function handleSaveSub2ApiSchedulerConfig() {

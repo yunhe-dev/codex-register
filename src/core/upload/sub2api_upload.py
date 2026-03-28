@@ -122,7 +122,7 @@ def _extract_sub2api_failure_from_text(text: str) -> Optional[str]:
 
 
 def _is_temporary_sub2api_failure(message: str) -> bool:
-    """识别应保留账号的临时性失败，例如 429 限流。"""
+    """识别临时性失败（如 429 限流），用于按失效处理。"""
     text = str(message or "").lower()
     temporary_keywords = (
         "api returned 429",
@@ -166,7 +166,7 @@ def _parse_sse_test_events(text: str) -> Tuple[Optional[bool], Optional[str]]:
             failure = _extract_sub2api_failure_from_text(payload_text)
             if failure:
                 if _is_temporary_sub2api_failure(failure):
-                    return None, f"限流中，暂时保留: {failure}"
+                    return False, f"限流/临时失败，按失效处理: {failure}"
                 return False, failure
             continue
 
@@ -175,7 +175,7 @@ def _parse_sse_test_events(text: str) -> Tuple[Optional[bool], Optional[str]]:
             error_text = payload.get("error") or payload.get("message") or payload_text
             failure = _extract_sub2api_failure_from_text(str(error_text)) or str(error_text)
             if _is_temporary_sub2api_failure(failure):
-                return None, f"限流中，暂时保留: {failure}"
+                return False, f"限流/临时失败，按失效处理: {failure}"
             return False, failure
 
         if event_type in {"result", "test_result", "complete", "completed", "success"}:
@@ -638,7 +638,7 @@ def test_sub2api_account(api_url: str, api_key: str, account_id: int) -> Tuple[O
     if response.status_code in (401, 403):
         return None, f"测试接口鉴权失败: HTTP {response.status_code}"
     if response.status_code == 429:
-        return None, "账号当前处于限流状态，暂时保留"
+        return False, "账号当前处于限流状态，按失效处理"
     if response.status_code == 404:
         return False, "远端账号不存在"
     if response.status_code >= 500:
@@ -648,11 +648,11 @@ def test_sub2api_account(api_url: str, api_key: str, account_id: int) -> Tuple[O
             payload = response.json()
         except Exception:
             if response.status_code == 429:
-                return None, "账号当前处于限流状态，暂时保留"
+                return False, "账号当前处于限流状态，按失效处理"
             return False, f"账号测试失败: HTTP {response.status_code}"
         failure_message = _extract_sub2api_message(payload, f"账号测试失败: HTTP {response.status_code}")
         if response.status_code == 429 or _is_temporary_sub2api_failure(failure_message):
-            return None, f"限流中，暂时保留: {failure_message}"
+            return False, f"限流/临时失败，按失效处理: {failure_message}"
         return False, failure_message
 
     try:
@@ -660,7 +660,7 @@ def test_sub2api_account(api_url: str, api_key: str, account_id: int) -> Tuple[O
     except Exception:
         raw_text = getattr(response, "text", "")
         if _is_temporary_sub2api_failure(raw_text):
-            return None, f"限流中，暂时保留: {raw_text.strip()}"
+            return False, f"限流/临时失败，按失效处理: {raw_text.strip()}"
         sse_result, sse_message = _parse_sse_test_events(raw_text)
         if sse_result is not None:
             return sse_result, sse_message or "账号测试完成"
@@ -672,7 +672,7 @@ def test_sub2api_account(api_url: str, api_key: str, account_id: int) -> Tuple[O
     failure_reason = _sub2api_payload_indicates_failure(payload)
     if failure_reason:
         if _is_temporary_sub2api_failure(failure_reason):
-            return None, f"限流中，暂时保留: {failure_reason}"
+            return False, f"限流/临时失败，按失效处理: {failure_reason}"
         return False, failure_reason
     return True, _extract_sub2api_message(payload, "账号测试成功")
 
