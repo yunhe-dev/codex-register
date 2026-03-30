@@ -361,6 +361,12 @@ SETTING_DEFINITIONS: Dict[str, SettingDefinition] = {
         category=SettingCategory.SUB2API,
         description="Sub2API 单账号测活间隔（秒）"
     ),
+    "sub2api_auto_delete_invalid_accounts": SettingDefinition(
+        db_key="sub2api.auto_delete_invalid_accounts",
+        default_value=False,
+        category=SettingCategory.SUB2API,
+        description="Sub2API 自动维护时是否删除失效账号"
+    ),
     "sub2api_auto_register_enabled": SettingDefinition(
         db_key="sub2api.auto_register_enabled",
         default_value=False,
@@ -493,6 +499,7 @@ SETTING_TYPES: Dict[str, Type] = {
     "sub2api_auto_check_enabled": bool,
     "sub2api_auto_check_interval": int,
     "sub2api_auto_check_sleep_seconds": int,
+    "sub2api_auto_delete_invalid_accounts": bool,
     "sub2api_auto_register_enabled": bool,
     "sub2api_auto_register_threshold": int,
     "sub2api_auto_register_batch_count": int,
@@ -788,6 +795,7 @@ class Settings(BaseModel):
     sub2api_auto_check_enabled: bool = False
     sub2api_auto_check_interval: int = 60
     sub2api_auto_check_sleep_seconds: int = 1
+    sub2api_auto_delete_invalid_accounts: bool = False
     sub2api_auto_register_enabled: bool = False
     sub2api_auto_register_threshold: int = 10
     sub2api_auto_register_batch_count: int = 5

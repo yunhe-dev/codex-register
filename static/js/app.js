@@ -42,6 +42,7 @@ let lastBackendLogTotalLines = null;
 let latestSub2ApiStatus = null;
 let currentSub2ApiCheckEnabled = false;
 let currentSub2ApiRegisterEnabled = false;
+let currentSub2ApiDeleteInvalidAccounts = false;
 let currentSub2ApiUploadEnabled = true;
 let currentSub2ApiUploadServiceIds = [];
 let currentSub2ApiRegisterMode = 'parallel';
@@ -141,6 +142,7 @@ const elements = {
     sub2apiForceCheckBtn: document.getElementById('sub2api-force-check-btn'),
     sub2apiCheckInterval: document.getElementById('sub2api-check-interval'),
     sub2apiCheckSleep: document.getElementById('sub2api-check-sleep'),
+    sub2apiDeleteInvalidAccounts: document.getElementById('sub2api-delete-invalid-accounts'),
     sub2apiRegisterThreshold: document.getElementById('sub2api-register-threshold'),
     sub2apiRegisterBatchCount: document.getElementById('sub2api-register-batch-count'),
     sub2apiRegisterMaxAttempts: document.getElementById('sub2api-register-max-attempts'),
@@ -671,6 +673,7 @@ async function loadSub2ApiSchedulerConfig() {
         const config = await api.get('/sub2api-scheduler/config');
         currentSub2ApiCheckEnabled = !!config.check_enabled;
         currentSub2ApiRegisterEnabled = !!config.register_enabled;
+        currentSub2ApiDeleteInvalidAccounts = !!config.delete_invalid_accounts;
         currentSub2ApiUploadEnabled = config.upload_enabled !== false;
         currentSub2ApiUploadServiceIds = Array.isArray(config.upload_service_ids) ? config.upload_service_ids : [];
         currentSub2ApiRegisterMode = (config.register_mode === 'pipeline' || config.register_mode === 'parallel')
@@ -685,6 +688,9 @@ async function loadSub2ApiSchedulerConfig() {
 
         elements.sub2apiCheckInterval.value = config.check_interval ?? 60;
         elements.sub2apiCheckSleep.value = config.check_sleep ?? 1;
+        if (elements.sub2apiDeleteInvalidAccounts) {
+            elements.sub2apiDeleteInvalidAccounts.checked = currentSub2ApiDeleteInvalidAccounts;
+        }
         elements.sub2apiRegisterThreshold.value = config.register_threshold ?? 10;
         elements.sub2apiRegisterBatchCount.value = config.register_batch_count ?? 5;
         elements.sub2apiRegisterMaxAttempts.value = config.register_max_attempts ?? 10;
@@ -1098,6 +1104,7 @@ function renderSub2ApiHistoryChart() {
 async function handleSaveSub2ApiSchedulerConfig() {
     elements.sub2apiSaveConfigBtn.disabled = true;
     elements.sub2apiSaveConfigBtn.textContent = '保存中...';
+    currentSub2ApiDeleteInvalidAccounts = !!elements.sub2apiDeleteInvalidAccounts?.checked;
     currentSub2ApiUploadEnabled = elements.sub2apiSchedulerAutoUploadSub2api
         ? elements.sub2apiSchedulerAutoUploadSub2api.checked
         : true;
@@ -1120,6 +1127,7 @@ async function handleSaveSub2ApiSchedulerConfig() {
             check_enabled: currentSub2ApiCheckEnabled,
             check_interval: parseInt(elements.sub2apiCheckInterval.value) || 60,
             check_sleep: parseInt(elements.sub2apiCheckSleep.value) || 0,
+            delete_invalid_accounts: currentSub2ApiDeleteInvalidAccounts,
             register_enabled: currentSub2ApiRegisterEnabled,
             register_threshold: parseInt(elements.sub2apiRegisterThreshold.value) || 10,
             register_batch_count: parseInt(elements.sub2apiRegisterBatchCount.value) || 5,
@@ -1149,6 +1157,7 @@ async function handleStopSub2ApiSchedulerTask() {
     elements.sub2apiStopTaskBtn.disabled = true;
     const nextCheckEnabled = !currentSub2ApiCheckEnabled;
     const nextRegisterEnabled = nextCheckEnabled ? true : false;
+    currentSub2ApiDeleteInvalidAccounts = !!elements.sub2apiDeleteInvalidAccounts?.checked;
     currentSub2ApiUploadEnabled = elements.sub2apiSchedulerAutoUploadSub2api
         ? elements.sub2apiSchedulerAutoUploadSub2api.checked
         : true;
@@ -1171,6 +1180,7 @@ async function handleStopSub2ApiSchedulerTask() {
             check_enabled: nextCheckEnabled,
             check_interval: parseInt(elements.sub2apiCheckInterval.value) || 60,
             check_sleep: parseInt(elements.sub2apiCheckSleep.value) || 0,
+            delete_invalid_accounts: currentSub2ApiDeleteInvalidAccounts,
             register_enabled: nextRegisterEnabled,
             register_threshold: parseInt(elements.sub2apiRegisterThreshold.value) || 10,
             register_batch_count: parseInt(elements.sub2apiRegisterBatchCount.value) || 5,

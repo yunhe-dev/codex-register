@@ -34,6 +34,7 @@ def test_sub2api_scheduler_config_round_trip(monkeypatch, tmp_path):
                 "check_enabled": True,
                 "check_interval": 15,
                 "check_sleep": 2,
+                "delete_invalid_accounts": True,
                 "register_enabled": True,
                 "register_threshold": 7,
                 "register_batch_count": 3,
@@ -50,6 +51,7 @@ def test_sub2api_scheduler_config_round_trip(monkeypatch, tmp_path):
             "check_enabled": True,
             "check_interval": 15,
             "check_sleep": 2,
+            "delete_invalid_accounts": True,
             "register_enabled": True,
             "register_threshold": 7,
             "register_batch_count": 3,
@@ -100,6 +102,31 @@ def test_sub2api_scheduler_stop_request_persists_disabled_flags(monkeypatch, tmp
         saved = client.get("/api/sub2api-scheduler/config").json()
         assert saved["check_enabled"] is False
         assert saved["register_enabled"] is False
+        assert saved["delete_invalid_accounts"] is False
+
+
+def test_sub2api_scheduler_config_defaults_delete_invalid_accounts_to_false(monkeypatch, tmp_path):
+    client = _build_test_client(monkeypatch, tmp_path)
+
+    with client:
+        response = client.post(
+            "/api/sub2api-scheduler/config",
+            json={
+                "check_enabled": True,
+                "check_interval": 15,
+                "check_sleep": 2,
+                "register_enabled": True,
+                "register_threshold": 7,
+                "register_batch_count": 3,
+                "register_max_attempts": 10,
+                "email_service": "temp_mail:12",
+            },
+        )
+        assert response.status_code == 200
+
+        saved = client.get("/api/sub2api-scheduler/config")
+        assert saved.status_code == 200
+        assert saved.json()["delete_invalid_accounts"] is False
 
 
 def test_sub2api_scheduler_status_includes_check_enabled(monkeypatch, tmp_path):

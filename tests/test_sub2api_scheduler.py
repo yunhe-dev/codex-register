@@ -208,3 +208,203 @@ def test_scan_completed_records_history_point(monkeypatch):
     assert captured[0]["accounts_invalid_after_scan"] == 1
     assert captured[0]["total_accounts_after_scan"] == 1
     assert captured[0]["total_healthy_after_replenish"] == 1
+
+
+def test_invalid_accounts_are_not_deleted_when_switch_is_disabled(monkeypatch):
+    @contextmanager
+    def fake_get_db():
+        yield object()
+
+    service = SimpleNamespace(id=7, name="svc", api_url="https://example.com", api_key="k")
+    delete_calls = []
+
+    monkeypatch.setattr(
+        scheduler,
+        "get_settings",
+        lambda: SimpleNamespace(
+            sub2api_auto_check_enabled=True,
+            sub2api_auto_delete_invalid_accounts=False,
+            sub2api_auto_register_enabled=False,
+            sub2api_auto_check_sleep_seconds=0,
+            sub2api_auto_register_threshold=10,
+            sub2api_auto_register_batch_count=5,
+        ),
+    )
+    monkeypatch.setattr(scheduler, "get_db", fake_get_db)
+    monkeypatch.setattr(scheduler.crud, "get_sub2api_services", lambda db, enabled=True: [service])
+    monkeypatch.setattr(
+        scheduler,
+        "list_sub2api_openai_accounts",
+        lambda api_url, api_key: [{"id": 1, "name": "a1"}],
+    )
+    monkeypatch.setattr(
+        scheduler,
+        "test_sub2api_account",
+        lambda api_url, api_key, account_id: (False, "失效"),
+    )
+    monkeypatch.setattr(
+        scheduler,
+        "delete_sub2api_account",
+        lambda api_url, api_key, account_id: delete_calls.append(account_id) or (True, "deleted"),
+    )
+    monkeypatch.setattr(scheduler, "append_system_log", lambda level, msg: None)
+    monkeypatch.setattr(scheduler, "_record_scheduler_history_point", lambda **kwargs: None)
+
+    scheduler._is_checking = False
+    scheduler.check_sub2api_services_job(main_loop=None, manual_logs=[])
+
+    snapshot = scheduler.get_scheduler_status_snapshot()
+    assert delete_calls == []
+    assert snapshot["accounts_invalid"] == 1
+    assert snapshot["accounts_deleted"] == 0
+    assert snapshot["accounts_delete_failed"] == 0
+
+
+def test_invalid_accounts_are_deleted_when_switch_is_enabled(monkeypatch):
+    @contextmanager
+    def fake_get_db():
+        yield object()
+
+    service = SimpleNamespace(id=7, name="svc", api_url="https://example.com", api_key="k")
+    delete_calls = []
+
+    monkeypatch.setattr(
+        scheduler,
+        "get_settings",
+        lambda: SimpleNamespace(
+            sub2api_auto_check_enabled=True,
+            sub2api_auto_delete_invalid_accounts=True,
+            sub2api_auto_register_enabled=False,
+            sub2api_auto_check_sleep_seconds=0,
+            sub2api_auto_register_threshold=10,
+            sub2api_auto_register_batch_count=5,
+        ),
+    )
+    monkeypatch.setattr(scheduler, "get_db", fake_get_db)
+    monkeypatch.setattr(scheduler.crud, "get_sub2api_services", lambda db, enabled=True: [service])
+    monkeypatch.setattr(
+        scheduler,
+        "list_sub2api_openai_accounts",
+        lambda api_url, api_key: [{"id": 1, "name": "a1"}],
+    )
+    monkeypatch.setattr(
+        scheduler,
+        "test_sub2api_account",
+        lambda api_url, api_key, account_id: (False, "失效"),
+    )
+    monkeypatch.setattr(
+        scheduler,
+        "delete_sub2api_account",
+        lambda api_url, api_key, account_id: delete_calls.append(account_id) or (True, "deleted"),
+    )
+    monkeypatch.setattr(scheduler, "append_system_log", lambda level, msg: None)
+    monkeypatch.setattr(scheduler, "_record_scheduler_history_point", lambda **kwargs: None)
+
+    scheduler._is_checking = False
+    scheduler.check_sub2api_services_job(main_loop=None, manual_logs=[])
+
+    snapshot = scheduler.get_scheduler_status_snapshot()
+    assert delete_calls == [1]
+    assert snapshot["accounts_invalid"] == 1
+    assert snapshot["accounts_deleted"] == 1
+    assert snapshot["accounts_delete_failed"] == 0
+
+
+def test_rate_limited_accounts_are_never_deleted(monkeypatch):
+    @contextmanager
+    def fake_get_db():
+        yield object()
+
+    service = SimpleNamespace(id=7, name="svc", api_url="https://example.com", api_key="k")
+    delete_calls = []
+
+    monkeypatch.setattr(
+        scheduler,
+        "get_settings",
+        lambda: SimpleNamespace(
+            sub2api_auto_check_enabled=True,
+            sub2api_auto_delete_invalid_accounts=True,
+            sub2api_auto_register_enabled=False,
+            sub2api_auto_check_sleep_seconds=0,
+            sub2api_auto_register_threshold=10,
+            sub2api_auto_register_batch_count=5,
+        ),
+    )
+    monkeypatch.setattr(scheduler, "get_db", fake_get_db)
+    monkeypatch.setattr(scheduler.crud, "get_sub2api_services", lambda db, enabled=True: [service])
+    monkeypatch.setattr(
+        scheduler,
+        "list_sub2api_openai_accounts",
+        lambda api_url, api_key: [{"id": 1, "name": "a1"}],
+    )
+    monkeypatch.setattr(
+        scheduler,
+        "test_sub2api_account",
+        lambda api_url, api_key, account_id: (False, "限流/临时失败，按失效处理: 429"),
+    )
+    monkeypatch.setattr(
+        scheduler,
+        "delete_sub2api_account",
+        lambda api_url, api_key, account_id: delete_calls.append(account_id) or (True, "deleted"),
+    )
+    monkeypatch.setattr(scheduler, "append_system_log", lambda level, msg: None)
+    monkeypatch.setattr(scheduler, "_record_scheduler_history_point", lambda **kwargs: None)
+
+    scheduler._is_checking = False
+    scheduler.check_sub2api_services_job(main_loop=None, manual_logs=[])
+
+    snapshot = scheduler.get_scheduler_status_snapshot()
+    assert delete_calls == []
+    assert snapshot["accounts_rate_limited"] == 1
+    assert snapshot["accounts_invalid"] == 0
+    assert snapshot["accounts_deleted"] == 0
+
+
+def test_pool_mode_invalid_accounts_are_never_deleted(monkeypatch):
+    @contextmanager
+    def fake_get_db():
+        yield object()
+
+    service = SimpleNamespace(id=7, name="svc", api_url="https://example.com", api_key="k")
+    delete_calls = []
+
+    monkeypatch.setattr(
+        scheduler,
+        "get_settings",
+        lambda: SimpleNamespace(
+            sub2api_auto_check_enabled=True,
+            sub2api_auto_delete_invalid_accounts=True,
+            sub2api_auto_register_enabled=False,
+            sub2api_auto_check_sleep_seconds=0,
+            sub2api_auto_register_threshold=10,
+            sub2api_auto_register_batch_count=5,
+        ),
+    )
+    monkeypatch.setattr(scheduler, "get_db", fake_get_db)
+    monkeypatch.setattr(scheduler.crud, "get_sub2api_services", lambda db, enabled=True: [service])
+    monkeypatch.setattr(
+        scheduler,
+        "list_sub2api_openai_accounts",
+        lambda api_url, api_key: [{"id": 1, "name": "a1", "credentials": {"pool_mode": True}}],
+    )
+    monkeypatch.setattr(
+        scheduler,
+        "test_sub2api_account",
+        lambda api_url, api_key, account_id: (False, "失效"),
+    )
+    monkeypatch.setattr(
+        scheduler,
+        "delete_sub2api_account",
+        lambda api_url, api_key, account_id: delete_calls.append(account_id) or (True, "deleted"),
+    )
+    monkeypatch.setattr(scheduler, "append_system_log", lambda level, msg: None)
+    monkeypatch.setattr(scheduler, "_record_scheduler_history_point", lambda **kwargs: None)
+
+    scheduler._is_checking = False
+    scheduler.check_sub2api_services_job(main_loop=None, manual_logs=[])
+
+    snapshot = scheduler.get_scheduler_status_snapshot()
+    assert delete_calls == []
+    assert snapshot["accounts_invalid"] == 1
+    assert snapshot["accounts_deleted"] == 0
+    assert snapshot["accounts_delete_failed"] == 0

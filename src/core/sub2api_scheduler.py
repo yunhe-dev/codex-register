@@ -116,6 +116,15 @@ def _is_rate_limited_message(message: Optional[str]) -> bool:
     )
 
 
+def _is_pool_mode_account(account: Optional[dict]) -> bool:
+    if not isinstance(account, dict):
+        return False
+    credentials = account.get("credentials")
+    if not isinstance(credentials, dict):
+        return False
+    return credentials.get("pool_mode") is True
+
+
 def _record_scheduler_history_point(
     *,
     event_type: str,
@@ -559,19 +568,22 @@ def check_sub2api_services_job(main_loop, manual_logs: list = None):
                         else:
                             state_increment["accounts_invalid"] = 1
                             _log("warning", f"测活进度 [{index}/{len(accounts)}] {account_name} 封号/失效: {message}", manual_logs)
-                        deleted, delete_message = delete_sub2api_account(svc.api_url, svc.api_key, int(account_id))
-                        if deleted:
-                            state_increment["accounts_deleted"] = 1
-                            if is_rate_limited:
-                                _log("warning", f"已删除限流账号 {account_name}: {delete_message}", manual_logs)
+                            if _is_pool_mode_account(account):
+                                _log("info", f"检测到失效账号 {account_name} 已开启池模式，已跳过删除", manual_logs)
                             else:
-                                _log("warning", f"已删除封号/失效账号 {account_name}: {delete_message}", manual_logs)
-                        else:
-                            state_increment["accounts_delete_failed"] = 1
-                            if is_rate_limited:
-                                _log("error", f"删除限流账号 {account_name} 失败: {delete_message}", manual_logs)
-                            else:
-                                _log("error", f"删除封号/失效账号 {account_name} 失败: {delete_message}", manual_logs)
+                                delete_invalid_accounts = bool(
+                                    getattr(get_settings(), "sub2api_auto_delete_invalid_accounts", False)
+                                )
+                                if delete_invalid_accounts:
+                                    deleted, delete_message = delete_sub2api_account(svc.api_url, svc.api_key, int(account_id))
+                                    if deleted:
+                                        state_increment["accounts_deleted"] = 1
+                                        _log("warning", f"已删除封号/失效账号 {account_name}: {delete_message}", manual_logs)
+                                    else:
+                                        state_increment["accounts_delete_failed"] = 1
+                                        _log("error", f"删除封号/失效账号 {account_name} 失败: {delete_message}", manual_logs)
+                                else:
+                                    _log("info", f"检测到失效账号 {account_name}，但未启用自动删除，已跳过删除", manual_logs)
                     else:
                         state_increment["accounts_unknown"] = 1
                         _log("warning", f"账号 {account_name} 无法判定健康状态，已跳过删除: {message}", manual_logs)

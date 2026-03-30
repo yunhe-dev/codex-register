@@ -85,6 +85,7 @@ class Sub2ApiSchedulerConfig(BaseModel):
     check_enabled: bool
     check_interval: int
     check_sleep: int
+    delete_invalid_accounts: bool = False
     register_enabled: bool
     register_threshold: int
     register_batch_count: int
@@ -105,6 +106,7 @@ async def get_sub2api_scheduler_config():
         "check_enabled": settings.sub2api_auto_check_enabled,
         "check_interval": settings.sub2api_auto_check_interval,
         "check_sleep": settings.sub2api_auto_check_sleep_seconds,
+        "delete_invalid_accounts": settings.sub2api_auto_delete_invalid_accounts,
         "register_enabled": settings.sub2api_auto_register_enabled,
         "register_threshold": settings.sub2api_auto_register_threshold,
         "register_batch_count": settings.sub2api_auto_register_batch_count,
@@ -195,6 +197,7 @@ async def update_sub2api_scheduler_config(request: Sub2ApiSchedulerConfig):
         sub2api_auto_check_enabled=request.check_enabled,
         sub2api_auto_check_interval=request.check_interval,
         sub2api_auto_check_sleep_seconds=request.check_sleep,
+        sub2api_auto_delete_invalid_accounts=request.delete_invalid_accounts,
         sub2api_auto_register_enabled=request.register_enabled,
         sub2api_auto_register_threshold=request.register_threshold,
         sub2api_auto_register_batch_count=request.register_batch_count,
