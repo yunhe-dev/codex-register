@@ -533,6 +533,24 @@ body {
     line-height: 1;
 }
 
+.log-lock-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    font-size: 0.95rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.log-lock-btn[aria-pressed="true"] {
+    background: rgba(122, 162, 247, 0.14);
+    color: #d7e3ff;
+    border-color: rgba(122, 162, 247, 0.35);
+}
+
 .btn-lg {
     padding: 14px 28px;
     font-size: 1rem;

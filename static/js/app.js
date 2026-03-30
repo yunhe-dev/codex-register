@@ -39,6 +39,8 @@ let systemLogPollingInterval = null;
 let lastSystemLogId = 0;
 let backendLogPollingInterval = null;
 let lastBackendLogTotalLines = null;
+let consoleLogAutoScrollLocked = false;
+let backendLogAutoScrollLocked = false;
 let latestSub2ApiStatus = null;
 let currentSub2ApiCheckEnabled = false;
 let currentSub2ApiRegisterEnabled = false;
@@ -93,7 +95,9 @@ const elements = {
     consoleLog: document.getElementById('console-log'),
     backendConsoleLog: document.getElementById('backend-console-log'),
     backendLogBody: document.getElementById('backend-log-body'),
+    toggleConsoleLogLockBtn: document.getElementById('toggle-console-log-lock-btn'),
     toggleBackendLogBtn: document.getElementById('toggle-backend-log-btn'),
+    toggleBackendLogLockBtn: document.getElementById('toggle-backend-log-lock-btn'),
     clearBackendLogBtn: document.getElementById('clear-backend-log-btn'),
     clearLogBtn: document.getElementById('clear-log-btn'),
     // 任务状态
@@ -347,6 +351,82 @@ function syncSub2ApiHistoryLegendChecked() {
     });
 }
 
+function initLogAutoScrollPreferences() {
+    try {
+        consoleLogAutoScrollLocked = localStorage.getItem('console_log_auto_scroll_locked') === '1';
+        backendLogAutoScrollLocked = localStorage.getItem('backend_log_auto_scroll_locked') === '1';
+    } catch (e) {}
+
+    updateConsoleLogLockButton();
+    updateBackendLogLockButton();
+
+    if (!consoleLogAutoScrollLocked && elements.consoleLog) {
+        elements.consoleLog.scrollTop = elements.consoleLog.scrollHeight;
+    }
+    if (!backendLogAutoScrollLocked && elements.backendConsoleLog) {
+        elements.backendConsoleLog.scrollTop = elements.backendConsoleLog.scrollHeight;
+    }
+}
+
+function setLogAutoScrollLocked(kind, locked) {
+    const isConsole = kind === 'console';
+    const storageKey = isConsole ? 'console_log_auto_scroll_locked' : 'backend_log_auto_scroll_locked';
+
+    if (isConsole) {
+        consoleLogAutoScrollLocked = locked;
+    } else {
+        backendLogAutoScrollLocked = locked;
+    }
+
+    try {
+        localStorage.setItem(storageKey, locked ? '1' : '0');
+    } catch (e) {}
+
+    if (!locked) {
+        const logEl = isConsole ? elements.consoleLog : elements.backendConsoleLog;
+        if (logEl) {
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+    }
+
+    if (isConsole) {
+        updateConsoleLogLockButton();
+    } else {
+        updateBackendLogLockButton();
+    }
+}
+
+function toggleLogAutoScroll(kind) {
+    const locked = kind === 'console' ? consoleLogAutoScrollLocked : backendLogAutoScrollLocked;
+    setLogAutoScrollLocked(kind, !locked);
+}
+
+function updateConsoleLogLockButton() {
+    if (!elements.toggleConsoleLogLockBtn) return;
+    const locked = consoleLogAutoScrollLocked;
+    elements.toggleConsoleLogLockBtn.textContent = locked ? '🔒' : '🔓';
+    elements.toggleConsoleLogLockBtn.title = locked ? '解锁滚动' : '锁定滚动';
+    elements.toggleConsoleLogLockBtn.setAttribute('aria-pressed', locked ? 'true' : 'false');
+}
+
+function updateBackendLogLockButton() {
+    if (!elements.toggleBackendLogLockBtn) return;
+    const locked = backendLogAutoScrollLocked;
+    elements.toggleBackendLogLockBtn.textContent = locked ? '🔒' : '🔓';
+    elements.toggleBackendLogLockBtn.title = locked ? '解锁滚动' : '锁定滚动';
+    elements.toggleBackendLogLockBtn.setAttribute('aria-pressed', locked ? 'true' : 'false');
+}
+
+function renderConsoleLogEmptyState(message) {
+    if (!elements.consoleLog) return;
+    elements.consoleLog.innerHTML = `<div class="log-line info">${escapeHtml(message)}</div>`;
+}
+
+function renderBackendLogEmptyState(message) {
+    if (!elements.backendConsoleLog) return;
+    elements.backendConsoleLog.innerHTML = `<div class="log-line info">${escapeHtml(message)}</div>`;
+}
+
 // 事件监听
 function initEventListeners() {
     // 注册表单提交
@@ -363,18 +443,24 @@ function initEventListeners() {
 
     // 清空日志
     elements.clearLogBtn.addEventListener('click', () => {
-        elements.consoleLog.innerHTML = '<div class="log-line info">[系统] 日志已清空</div>';
+        renderConsoleLogEmptyState('[系统] 日志已清空');
         displayedLogs.clear();  // 清空日志去重集合
     });
     if (elements.clearBackendLogBtn) {
         elements.clearBackendLogBtn.addEventListener('click', () => {
             if (elements.backendConsoleLog) {
-                elements.backendConsoleLog.innerHTML = '<div class="log-line info">[系统] 后台日志已清空</div>';
+                renderBackendLogEmptyState('[系统] 后台日志已清空');
             }
         });
     }
     if (elements.toggleBackendLogBtn) {
         elements.toggleBackendLogBtn.addEventListener('click', toggleBackendLogPanel);
+    }
+    if (elements.toggleConsoleLogLockBtn) {
+        elements.toggleConsoleLogLockBtn.addEventListener('click', () => toggleLogAutoScroll('console'));
+    }
+    if (elements.toggleBackendLogLockBtn) {
+        elements.toggleBackendLogLockBtn.addEventListener('click', () => toggleLogAutoScroll('backend'));
     }
 
     // 刷新账号列表
@@ -462,6 +548,7 @@ function initEventListeners() {
         backendExpanded = localStorage.getItem('backend_log_panel_expanded') !== '0';
     } catch (e) {}
     setBackendLogPanelExpanded(backendExpanded);
+    initLogAutoScrollPreferences();
     startSystemLogPolling();
     startBackendLogPolling();
 }
@@ -1925,8 +2012,10 @@ function addLog(type, message) {
     line.innerHTML = `<span class="timestamp">[${timestamp}]</span>${escapeHtml(message)}`;
     elements.consoleLog.appendChild(line);
 
-    // 自动滚动到底部
-    elements.consoleLog.scrollTop = elements.consoleLog.scrollHeight;
+    // 锁定时保持当前位置，解锁时继续跟随底部
+    if (!consoleLogAutoScrollLocked) {
+        elements.consoleLog.scrollTop = elements.consoleLog.scrollHeight;
+    }
 
     // 限制日志行数
     const lines = elements.consoleLog.querySelectorAll('.log-line');
@@ -1941,7 +2030,9 @@ function addBackendLog(type, message) {
     line.className = `log-line ${type || 'info'}`;
     line.textContent = message || '';
     elements.backendConsoleLog.appendChild(line);
-    elements.backendConsoleLog.scrollTop = elements.backendConsoleLog.scrollHeight;
+    if (!backendLogAutoScrollLocked) {
+        elements.backendConsoleLog.scrollTop = elements.backendConsoleLog.scrollHeight;
+    }
 
     const lines = elements.backendConsoleLog.querySelectorAll('.log-line');
     if (lines.length > 800) {
@@ -1971,6 +2062,9 @@ function replaceBackendLogs(lines) {
     if (!elements.backendConsoleLog) return;
     elements.backendConsoleLog.innerHTML = '';
     (lines || []).forEach(line => addBackendLog(getBackendLogType(line), line));
+    if (!backendLogAutoScrollLocked) {
+        elements.backendConsoleLog.scrollTop = elements.backendConsoleLog.scrollHeight;
+    }
 }
 
 async function fetchBackendLogs() {

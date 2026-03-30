@@ -436,6 +436,7 @@
                         <div class="card-header">
                             <h3>💻 监控台</h3>
                             <div style="display: flex; gap: var(--spacing-sm); align-items: center;">
+                                <button class="btn btn-ghost btn-sm log-lock-btn" id="toggle-console-log-lock-btn" title="锁定滚动" aria-pressed="false">🔓</button>
                                 <span id="task-status-badge" class="status-badge pending" style="display: none;">等待中</span>
                                 <button class="btn btn-ghost btn-sm" id="clear-log-btn">清空</button>
                             </div>
@@ -584,7 +585,8 @@
                                 <button class="btn btn-ghost backend-log-toggle-btn" id="toggle-backend-log-btn" title="折叠/展开">▾</button>
                                 <span>🧾 后台控制日志</span>
                             </h3>
-                            <div style="display: flex; gap: var(--spacing-sm);">
+                            <div style="display: flex; gap: var(--spacing-sm); align-items: center;">
+                                <button class="btn btn-ghost btn-sm log-lock-btn" id="toggle-backend-log-lock-btn" title="锁定滚动" aria-pressed="false">🔓</button>
                                 <button class="btn btn-ghost btn-sm" id="clear-backend-log-btn">清空</button>
                             </div>
                         </div>
